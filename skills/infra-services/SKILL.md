@@ -224,15 +224,17 @@ else:
 
 # ── 7. 验证服务 ──
 sleep 2
-curl -s http://127.0.0.1:9001/api/state | python3 -c "import sys,json;d=json.load(sys.stdin);print('Monitor: OK')" 2>/dev/null || echo "Monitor: starting..."
+curl -s --noproxy '*' http://127.0.0.1:9001/api/state | python3 -c "import sys,json;d=json.load(sys.stdin);print('Monitor: OK')" 2>/dev/null || echo "Monitor: starting..."
 pgrep -f "frpc.*frpc.toml" > /dev/null && echo "frpc: OK" || echo "frpc: starting..."
 
-# ── 8. 最后一步：重启 Gateway 加载 Hook（这会断开当前对话，所以放最后）──
-echo "正在重启 Gateway 加载 Hook..."
-launchctl kickstart -k gui/$(id -u)/ai.openclaw.gateway 2>/dev/null && echo "gateway restarted, hook will be active on next message" || echo "please restart openclaw gateway manually"
+# ── 8. 等待 Gateway 热加载 Hook（不重启，避免断开对话）──
+echo "等待 Gateway 热加载 Hook..."
+sleep 5
+grep "status-page-notify" ~/.openclaw/logs/gateway.log 2>/dev/null | tail -1 || echo "Hook: waiting for hot reload..."
+echo "ALL DONE"
 ```
 
 执行完成后回复用户：
 - 监控面板：http://127.0.0.1:9001（公网：https://claw.bfelab.com/bfe）
 - frpc 隧道已启动
-- 飞书「处理中」通知将从下一条消息开始生效（因为重启了 Gateway）
+- 飞书「处理中」通知已激活，下一条消息即可生效
