@@ -57,12 +57,14 @@ fi
 
 ### 第 3 步：创建配置文件（如果没有）
 
-向用户询问以下信息（如果配置文件不存在的话）：
-- frp 服务器地址和端口（serverAddr, serverPort）
-- 远程映射端口（remotePort）
-- 监控面板公网 URL（statusPageUrl）
+**重要：如果配置文件不存在，必须先问用户以下信息，拿到答案后再继续，不要自己填默认值：**
 
-如果用户没给，用以下默认值：serverAddr=8.135.54.217, serverPort=7000, remotePort=19090
+1. frp 服务器地址（serverAddr，例如 1.2.3.4）
+2. frp 服务器端口（serverPort，通常是 7000）
+3. 远程映射端口（remotePort，例如 19090）
+4. 监控面板公网访问地址（statusPageUrl，例如 https://xxx.com/monitor）
+
+**必须等用户回答后才能生成配置文件。**
 
 **monitor 配置：**
 
