@@ -227,14 +227,14 @@ sleep 2
 curl -s --noproxy '*' http://127.0.0.1:9001/api/state | python3 -c "import sys,json;d=json.load(sys.stdin);print('Monitor: OK')" 2>/dev/null || echo "Monitor: starting..."
 pgrep -f "frpc.*frpc.toml" > /dev/null && echo "frpc: OK" || echo "frpc: starting..."
 
-# ── 8. 等待 Gateway 热加载 Hook（不重启，避免断开对话）──
-echo "等待 Gateway 热加载 Hook..."
-sleep 5
-grep "status-page-notify" ~/.openclaw/logs/gateway.log 2>/dev/null | tail -1 || echo "Hook: waiting for hot reload..."
+# ── 8. 重启 Gateway 加载 Hook ──
+# 这会短暂断开飞书连接（约 3 秒），但 hook 需要重启才能加载
+launchctl kickstart -k gui/$(id -u)/ai.openclaw.gateway 2>/dev/null && echo "gateway restarted" || echo "gateway restart failed, please run: launchctl kickstart -k gui/\$(id -u)/ai.openclaw.gateway"
 echo "ALL DONE"
 ```
 
-执行完成后回复用户：
+执行完成后回复用户（注意：如果因为 gateway 重启导致本条消息无法发出，这是正常的）：
 - 监控面板：http://127.0.0.1:9001（公网：https://claw.bfelab.com/bfe）
 - frpc 隧道已启动
-- 飞书「处理中」通知已激活，下一条消息即可生效
+- 飞书「处理中」通知已激活
+- 如果这条回复没收到，是因为 Gateway 刚重启，发下一条消息即正常
