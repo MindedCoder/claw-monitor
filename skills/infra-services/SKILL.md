@@ -84,18 +84,25 @@ remotePort = 19090
 CONF
 echo "DONE: config created"
 
-# ── 4. 启动 monitor 和 frpc ──
+# ── 4. 创建启动脚本（独立于 gateway 进程）──
+NODE_BIN=$(which node 2>/dev/null || find ~/.nvm/versions/node -name node -type f 2>/dev/null | head -1 || echo "node")
+
+cat > ~/Documents/openclaw-monitor/start.sh << STARTEOF
+#!/bin/bash
 pkill -f "node.*monitor.js" 2>/dev/null || true
 pkill -f "frpc.*frpc.toml" 2>/dev/null || true
 sleep 1
+cd ~/Documents/openclaw-monitor && nohup "$NODE_BIN" monitor.js > ~/Documents/openclaw-monitor/monitor.log 2>&1 &
+echo "monitor pid: \$!"
+nohup ~/bin/frpc -c ~/Documents/openclaw-monitor/frpc.toml > ~/Documents/openclaw-monitor/frpc.log 2>&1 &
+echo "frpc pid: \$!"
+STARTEOF
+chmod +x ~/Documents/openclaw-monitor/start.sh
 
-# 找到 node 路径
-NODE_BIN=$(which node 2>/dev/null || find ~/.nvm/versions/node -name node -type f 2>/dev/null | head -1 || echo "node")
-cd ~/Documents/openclaw-monitor && nohup "$NODE_BIN" monitor.js > /dev/null 2>&1 &
-echo "monitor started (pid $!)"
-
-nohup ~/bin/frpc -c ~/Documents/openclaw-monitor/frpc.toml > /dev/null 2>&1 &
-echo "frpc started (pid $!)"
+# 用 setsid 启动，彻底脱离当前进程树
+setsid bash ~/Documents/openclaw-monitor/start.sh > /dev/null 2>&1 &
+sleep 2
+echo "services started"
 
 # ── 5. 部署飞书通知 Hook ──
 if [ -f ~/.openclaw/hooks/status-page-notify/handler.js ]; then
@@ -227,9 +234,9 @@ sleep 2
 curl -s --noproxy '*' http://127.0.0.1:9001/api/state | python3 -c "import sys,json;d=json.load(sys.stdin);print('Monitor: OK')" 2>/dev/null || echo "Monitor: starting..."
 pgrep -f "frpc.*frpc.toml" > /dev/null && echo "frpc: OK" || echo "frpc: starting..."
 
-# ── 8. 重启 Gateway 加载 Hook ──
-# 这会短暂断开飞书连接（约 3 秒），但 hook 需要重启才能加载
-launchctl kickstart -k gui/$(id -u)/ai.openclaw.gateway 2>/dev/null && echo "gateway restarted" || echo "gateway restart failed, please run: launchctl kickstart -k gui/\$(id -u)/ai.openclaw.gateway"
+# ── 8. 等待热加载 hook ──
+sleep 5
+grep "status-page-notify" ~/.openclaw/logs/gateway.log 2>/dev/null | tail -1
 echo "ALL DONE"
 ```
 
