@@ -63,7 +63,7 @@ cat > ~/Documents/openclaw-monitor/config.json << CONF
   "openclawProcessName": "openclaw",
   "checkIntervalMs": 1500,
   "failThreshold": 3,
-  "workspace": "$HOME/Documents/workspace",
+  "workspace": "$HOME/.openclaw",
   "feishu": {
     "appId": "${FEISHU_APP_ID}",
     "appSecret": "${FEISHU_APP_SECRET}",
@@ -83,6 +83,8 @@ localIP = "127.0.0.1"
 localPort = 9001
 remotePort = 19090
 CONF
+mkdir -p ~/.openclaw/data
+ln -sf ~/.openclaw/logs/status-page-notify-debug.log ~/.openclaw/data/status-page-notify-debug.log 2>/dev/null
 echo "DONE: config created"
 
 # ── 4. 创建启动脚本（独立于 gateway 进程）──
@@ -141,8 +143,13 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = path.resolve(__dirname, 'config.json');
 const DATA_DIR = path.resolve(process.env.HOME, '.openclaw', 'logs');
+const DEBUG_PATH = path.resolve(DATA_DIR, 'status-page-notify-debug.log');
 const PENDING_PATH = path.resolve(DATA_DIR, 'status-page-pending.json');
 const recallTimers = new Map();
+
+function debugLog(label, payload) {
+  try { fs.mkdirSync(DATA_DIR,{recursive:true}); fs.appendFileSync(DEBUG_PATH, new Date().toISOString()+' '+label+' '+JSON.stringify(payload)+'\n'); } catch {}
+}
 let tokenCache = { token: null, expiresAt: 0 };
 
 function loadConfig() { try { return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')); } catch { return null; } }
@@ -195,17 +202,19 @@ const handler = async (event) => {
   const openId = ctx.metadata?.senderId || ctx.conversationId?.replace(/^user:/,'');
   if (!openId) return;
 
+  debugLog('event', { type: event.type, action: event.action, context: ctx });
   await doRecall(sk, config);
 
   try {
     const token = await getToken(config.feishu.appId, config.feishu.appSecret);
     const result = await sendMsg(token, openId, config.statusPageUrl);
+    debugLog('sent', { openId, code: result?.code, msgId: result?.data?.message_id });
     if (result.code === 0 && result.data?.message_id) {
       const msgId = result.data.message_id;
       const p = loadPending(); p[sk] = msgId; savePending(p);
       recallTimers.set(sk, setTimeout(() => doRecall(sk, config), 3*60*1000));
     }
-  } catch {}
+  } catch (err) { debugLog('error', { message: err?.message }); }
 };
 
 export default handler;
