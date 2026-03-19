@@ -89,7 +89,9 @@ pkill -f "node.*monitor.js" 2>/dev/null || true
 pkill -f "frpc.*frpc.toml" 2>/dev/null || true
 sleep 1
 
-cd ~/Documents/openclaw-monitor && nohup node monitor.js > /dev/null 2>&1 &
+# 找到 node 路径
+NODE_BIN=$(which node 2>/dev/null || find ~/.nvm/versions/node -name node -type f 2>/dev/null | head -1 || echo "node")
+cd ~/Documents/openclaw-monitor && nohup "$NODE_BIN" monitor.js > /dev/null 2>&1 &
 echo "monitor started (pid $!)"
 
 nohup ~/bin/frpc -c ~/Documents/openclaw-monitor/frpc.toml > /dev/null 2>&1 &
