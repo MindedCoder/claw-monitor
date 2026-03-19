@@ -1,46 +1,285 @@
 ---
-name: infra-services
-description: "启动/停止/检查 OpenClaw 基础设施服务（监控面板 + frpc 隧道 + 飞书通知）"
+name: claw-monitor
+description: "一键部署 OpenClaw 监控面板 + frpc 公网隧道 + 飞书处理中通知，对话中直接触发无需预装"
 metadata:
   openclaw:
-    emoji: "🏗️"
+    emoji: "📡"
     os: ["darwin", "linux"]
 ---
 
-# 基础设施服务管理
+# Claw Monitor — 基础设施一键部署
 
-使用 `infra_services` 工具来管理服务。
+用户说「启动监控」「部署监控服务」「start monitor」等类似意图时触发本 skill。
 
-## 启动全部服务
+## 你需要做什么
 
-调用工具：
-```json
-{ "tool": "infra_services", "action": "start", "service": "all" }
+按以下步骤，用 `exec` 工具依次执行。每一步先检查是否已完成，避免重复操作。
+
+---
+
+### 第 1 步：安装 frpc（如果没有）
+
+```bash
+if command -v frpc &>/dev/null || [ -f ~/bin/frpc ]; then
+  echo "SKIP: frpc already installed"
+else
+  ARCH=$(uname -m)
+  OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+  [ "$ARCH" = "arm64" ] && ARCH_FRP="arm64" || ARCH_FRP="amd64"
+  [ "$OS" = "darwin" ] && OS_FRP="darwin" || OS_FRP="linux"
+  VER="0.61.1"
+  URL="https://github.com/fatedier/frp/releases/download/v${VER}/frp_${VER}_${OS_FRP}_${ARCH_FRP}.tar.gz"
+  mkdir -p ~/bin
+  curl -sL "$URL" | tar -xz -C /tmp/
+  cp "/tmp/frp_${VER}_${OS_FRP}_${ARCH_FRP}/frpc" ~/bin/frpc
+  chmod +x ~/bin/frpc
+  echo "DONE: frpc installed to ~/bin/frpc"
+fi
 ```
 
-## 停止全部服务
+---
 
-```json
-{ "tool": "infra_services", "action": "stop", "service": "all" }
+### 第 2 步：下载监控代码（如果没有）
+
+```bash
+if [ -f ~/Documents/openclaw-monitor/monitor.js ]; then
+  echo "SKIP: monitor code exists"
+else
+  git clone https://github.com/MindedCoder/claw-monitor.git /tmp/claw-monitor-tmp 2>/dev/null
+  mkdir -p ~/Documents/openclaw-monitor
+  cp /tmp/claw-monitor-tmp/src/monitor.js ~/Documents/openclaw-monitor/monitor.js
+  rm -rf /tmp/claw-monitor-tmp
+  echo "DONE: monitor.js deployed"
+fi
 ```
 
-## 查看状态
+---
 
-```json
-{ "tool": "infra_services", "action": "status" }
+### 第 3 步：创建配置文件（如果没有）
+
+向用户询问以下信息（如果配置文件不存在的话）：
+- frp 服务器地址和端口（serverAddr, serverPort）
+- 远程映射端口（remotePort）
+- 监控面板公网 URL（statusPageUrl）
+
+如果用户没给，用以下默认值：serverAddr=8.135.54.217, serverPort=7000, remotePort=19090
+
+**monitor 配置：**
+
+```bash
+cat > ~/Documents/openclaw-monitor/config.json << 'CONF'
+{
+  "healthUrl": "http://127.0.0.1:18789/health",
+  "openclawProcessName": "openclaw",
+  "checkIntervalMs": 1500,
+  "failThreshold": 3,
+  "feishu": {
+    "appId": "",
+    "appSecret": "",
+    "alertOpenId": ""
+  }
+}
+CONF
 ```
 
-## 单独管理某个服务
+注意：feishu 的 appId 和 appSecret 从用户的 `~/.openclaw/openclaw.json` 中 `channels.feishu` 读取填入。
 
-`service` 可选值：`all`（默认）、`monitor`、`frpc`
+**frpc 配置：**
 
-```json
-{ "tool": "infra_services", "action": "start", "service": "frpc" }
-{ "tool": "infra_services", "action": "stop", "service": "monitor" }
+```bash
+cat > ~/Documents/openclaw-monitor/frpc.toml << 'CONF'
+serverAddr = "用户提供的地址"
+serverPort = 7000
+
+[[proxies]]
+name = "monitor"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 9001
+remotePort = 用户提供的端口
+CONF
 ```
 
-## 服务说明
+---
 
-- **monitor**：OpenClaw 健康监控面板，提供 Web 界面展示运行状态
-- **frpc**：FRP 隧道客户端，将 monitor 面板映射到公网
-- **飞书通知**：自动 hook，收到消息时发送「处理中」通知，AI 回复后自动撤回（无需手动管理）
+### 第 4 步：部署飞书通知 Hook（如果没有）
+
+```bash
+if [ -f ~/.openclaw/hooks/status-page-notify/handler.js ]; then
+  echo "SKIP: hook already exists"
+else
+  mkdir -p ~/.openclaw/hooks/status-page-notify
+
+  # HOOK.md
+  cat > ~/.openclaw/hooks/status-page-notify/HOOK.md << 'HOOKMD'
+---
+name: status-page-notify
+description: "收到消息时发送处理中通知，AI回复后自动撤回"
+metadata:
+  openclaw:
+    emoji: "📡"
+    events: ["message:received", "message:sent"]
+---
+# Status Page Notify
+HOOKMD
+
+  # config.json — 从 openclaw.json 读取飞书凭证
+  FEISHU_APP_ID=$(python3 -c "import json;c=json.load(open('$HOME/.openclaw/openclaw.json'));print(c.get('channels',{}).get('feishu',{}).get('appId',''))" 2>/dev/null)
+  FEISHU_APP_SECRET=$(python3 -c "import json;c=json.load(open('$HOME/.openclaw/openclaw.json'));print(c.get('channels',{}).get('feishu',{}).get('appSecret',''))" 2>/dev/null)
+
+  cat > ~/.openclaw/hooks/status-page-notify/config.json << CFGEOF
+{
+  "statusPageUrl": "用户提供的公网URL",
+  "feishu": {
+    "appId": "${FEISHU_APP_ID}",
+    "appSecret": "${FEISHU_APP_SECRET}"
+  }
+}
+CFGEOF
+
+  # handler.js
+  cat > ~/.openclaw/hooks/status-page-notify/handler.js << 'HANDLEREOF'
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const CONFIG_PATH = path.resolve(__dirname, 'config.json');
+const DATA_DIR = path.resolve(process.env.HOME, '.openclaw', 'logs');
+const PENDING_PATH = path.resolve(DATA_DIR, 'status-page-pending.json');
+const recallTimers = new Map();
+let tokenCache = { token: null, expiresAt: 0 };
+
+function loadConfig() { try { return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')); } catch { return null; } }
+function loadPending() { try { return JSON.parse(fs.readFileSync(PENDING_PATH, 'utf8')); } catch { return {}; } }
+function savePending(d) { try { fs.mkdirSync(path.dirname(PENDING_PATH),{recursive:true}); fs.writeFileSync(PENDING_PATH,JSON.stringify(d)); } catch {} }
+
+async function getToken(appId, appSecret) {
+  if (tokenCache.token && Date.now() < tokenCache.expiresAt) return tokenCache.token;
+  const r = await fetch('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ app_id: appId, app_secret: appSecret })
+  });
+  const d = await r.json();
+  if (d.code !== 0) throw new Error(d.msg);
+  tokenCache = { token: d.tenant_access_token, expiresAt: Date.now() + (d.expire-60)*1000 };
+  return tokenCache.token;
+}
+
+async function sendMsg(token, openId, url) {
+  const content = { elements: [{ tag:'div', text:{ tag:'lark_md', content:`⏳ 正在处理中请稍后，[点击查看进度](${url})` }}]};
+  const r = await fetch('https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id', {
+    method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${token}`},
+    body: JSON.stringify({ receive_id:openId, msg_type:'interactive', content:JSON.stringify(content) })
+  });
+  return r.json();
+}
+
+async function recallMsg(token, msgId) {
+  return (await fetch(`https://open.feishu.cn/open-apis/im/v1/messages/${msgId}`,{ method:'DELETE', headers:{'Authorization':`Bearer ${token}`}})).json();
+}
+
+async function doRecall(sk, cfg) {
+  const pending = loadPending(); const msgId = pending[sk]; if (!msgId) return;
+  try { const t = await getToken(cfg.feishu.appId, cfg.feishu.appSecret); await recallMsg(t, msgId); } catch {}
+  delete pending[sk]; savePending(pending);
+  const timer = recallTimers.get(sk); if (timer) { clearTimeout(timer); recallTimers.delete(sk); }
+}
+
+const handler = async (event) => {
+  if (event.type !== 'message') return;
+  const ctx = event.context ?? {};
+  if (ctx.channelId !== 'feishu') return;
+  const config = loadConfig();
+  if (!config?.statusPageUrl || !config?.feishu?.appId) return;
+  const sk = event.sessionKey;
+
+  if (event.action === 'sent') { await doRecall(sk, config); return; }
+  if (event.action !== 'received') return;
+
+  const openId = ctx.metadata?.senderId || ctx.conversationId?.replace(/^user:/,'');
+  if (!openId) return;
+
+  await doRecall(sk, config);
+
+  try {
+    const token = await getToken(config.feishu.appId, config.feishu.appSecret);
+    const result = await sendMsg(token, openId, config.statusPageUrl);
+    if (result.code === 0 && result.data?.message_id) {
+      const msgId = result.data.message_id;
+      const p = loadPending(); p[sk] = msgId; savePending(p);
+      recallTimers.set(sk, setTimeout(() => doRecall(sk, config), 3*60*1000));
+    }
+  } catch {}
+};
+
+export default handler;
+HANDLEREOF
+
+  echo "DONE: hook deployed"
+fi
+```
+
+---
+
+### 第 5 步：注册 Hook 到 openclaw.json（如果没有）
+
+```bash
+python3 -c "
+import json, sys
+p = '$HOME/.openclaw/openclaw.json'
+c = json.load(open(p))
+h = c.setdefault('hooks', {}).setdefault('internal', {'enabled': True})
+h.setdefault('enabled', True)
+e = h.setdefault('entries', {})
+if 'status-page-notify' not in e:
+    e['status-page-notify'] = {'enabled': True}
+    json.dump(c, open(p,'w'), indent=2, ensure_ascii=False)
+    print('DONE: hook registered, need gateway restart')
+else:
+    print('SKIP: hook already registered')
+"
+```
+
+---
+
+### 第 6 步：启动服务
+
+```bash
+# 启动 monitor（后台）
+cd ~/Documents/openclaw-monitor && nohup node monitor.js > /dev/null 2>&1 &
+echo "monitor started (pid $!)"
+
+# 启动 frpc（后台）
+nohup ~/bin/frpc -c ~/Documents/openclaw-monitor/frpc.toml > /dev/null 2>&1 &
+echo "frpc started (pid $!)"
+```
+
+---
+
+### 第 7 步：重启 Gateway 加载 Hook
+
+```bash
+launchctl kickstart -k gui/$(id -u)/ai.openclaw.gateway 2>/dev/null && echo "gateway restarted" || echo "please restart openclaw gateway manually"
+```
+
+---
+
+### 第 8 步：验证
+
+```bash
+sleep 3
+# 检查 monitor
+curl -s http://127.0.0.1:9001/api/state | python3 -c "import sys,json;d=json.load(sys.stdin);print('Monitor: OK, OpenClaw状态:', d.get('openclaw',{}).get('status','unknown'))" 2>/dev/null || echo "Monitor: NOT running"
+
+# 检查 frpc
+pgrep -f "frpc.*frpc.toml" > /dev/null && echo "frpc: OK" || echo "frpc: NOT running"
+
+# 检查 hook
+grep "status-page-notify" ~/.openclaw/logs/gateway.log 2>/dev/null | tail -1 || echo "Hook: check gateway log"
+```
+
+全部完成后告知用户：
+- 监控面板本地地址：http://127.0.0.1:9001
+- 公网地址：用户配置的 statusPageUrl
+- 飞书通知已激活，收到消息自动发送处理中提示
