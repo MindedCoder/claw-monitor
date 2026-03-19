@@ -63,6 +63,7 @@ cat > ~/Documents/openclaw-monitor/config.json << CONF
   "openclawProcessName": "openclaw",
   "checkIntervalMs": 1500,
   "failThreshold": 3,
+  "workspace": "$HOME/Documents/workspace",
   "feishu": {
     "appId": "${FEISHU_APP_ID}",
     "appSecret": "${FEISHU_APP_SECRET}",
