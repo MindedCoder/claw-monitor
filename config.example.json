@@ -1,0 +1,22 @@
+{
+  "plugins": {
+    "entries": {
+      "infra-services": {
+        "enabled": true,
+        "config": {
+          "statusPageUrl": "https://your-domain.com/monitor",
+          "feishuAppId": "",
+          "feishuAppSecret": "",
+          "frpc": {
+            "serverAddr": "your-frp-server-ip",
+            "serverPort": 7000,
+            "remotePort": 19090
+          },
+          "monitor": {
+            "port": 9001
+          }
+        }
+      }
+    }
+  }
+}

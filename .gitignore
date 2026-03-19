@@ -1,0 +1,6 @@
+node_modules/
+*.log
+infra-pids.json
+status-page-pending.json
+frpc.toml
+.DS_Store

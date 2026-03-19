@@ -1,0 +1,23 @@
+{
+  "name": "openclaw-infra-services",
+  "version": "0.1.0",
+  "description": "OpenClaw 基础设施服务：监控面板 + frpc 隧道 + 飞书处理中通知",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "postinstall": "node src/setup-frpc.js"
+  },
+  "openclaw": {
+    "extensions": ["./src/index.js"],
+    "install": {
+      "npmSpec": "openclaw-infra-services"
+    }
+  },
+  "files": [
+    "src/",
+    "skills/",
+    "README.md"
+  ],
+  "keywords": ["openclaw", "plugin", "monitor", "frpc", "feishu"],
+  "license": "MIT"
+}
