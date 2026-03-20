@@ -9,7 +9,7 @@ metadata:
 
 # Claw Monitor — 监控面板 + frpc 隧道
 
-用户说「启动监控」「部署监控」「start monitor」等类似意图时触发本 skill。
+用户说「打开网页状态窗口」「打开状态窗口」「open status page」等类似意图时触发本 skill。
 
 ## 规则
 
