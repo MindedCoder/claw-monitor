@@ -12,8 +12,10 @@ openclaw-infra-services/
 ├── setup.sh                   # 独立 Skill 部署脚本
 ├── TOOLS.example.md           # TOOLS.md 示例
 ├── skills/
-│   └── infra-services/
-│       └── SKILL.md           # 对话式 Skill（一键 bash 脚本）
+│   ├── claw-monitor/
+│   │   └── SKILL.md           # Skill：监控面板 + frpc 隧道
+│   └── feishu-notify/
+│       └── SKILL.md           # Skill：飞书「处理中」通知 Hook
 ├── src/
 │   ├── index.js               # 插件入口，注册 hook + tool
 │   ├── monitor.js             # 监控面板（HTTP 服务 + 实时仪表盘）
@@ -41,7 +43,10 @@ openclaw plugins install openclaw-infra-services
 bash setup.sh
 ```
 
-该脚本会将 `SKILL.md` 部署到 `~/.openclaw/workspace/skills/claw-monitor/`，并在 `TOOLS.md` 中注册。之后在对话中说「启动监控」即可触发一键部署。
+该脚本会将 Skill 部署到 `~/.openclaw/workspace/skills/` 下，并在 `TOOLS.md` 中注册。包含两个独立 Skill：
+
+- **claw-monitor**：对话中说「启动监控」触发，部署监控面板 + frpc 隧道
+- **feishu-notify**：对话中说「部署飞书通知」触发，部署飞书「处理中」消息回复 Hook
 
 ## 配置
 

@@ -1,15 +1,15 @@
 ---
-name: claw-monitor
-description: "一键部署 OpenClaw 监控面板 + frpc 公网隧道 + 飞书处理中通知，对话中直接触发无需预装"
+name: feishu-notify
+description: "部署飞书「处理中」通知 Hook：收到消息自动发送等待提示，AI 回复后自动撤回"
 metadata:
   openclaw:
-    emoji: "📡"
+    emoji: "💬"
     os: ["darwin", "linux"]
 ---
 
-# Claw Monitor — 基础设施一键部署
+# Feishu Notify — 飞书「处理中」通知 Hook
 
-用户说「启动监控」「部署监控服务」「start monitor」等类似意图时触发本 skill。
+用户说「部署飞书通知」「启动消息回复hook」「deploy feishu notify」等类似意图时触发本 skill。
 
 ## 规则
 
@@ -25,89 +25,11 @@ metadata:
 ```bash
 set -e
 
-# ── 1. 安装 frpc ──
-if command -v frpc &>/dev/null || [ -f ~/bin/frpc ]; then
-  echo "SKIP: frpc already installed"
-else
-  ARCH=$(uname -m)
-  OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-  [ "$ARCH" = "arm64" ] && ARCH_FRP="arm64" || ARCH_FRP="amd64"
-  [ "$OS" = "darwin" ] && OS_FRP="darwin" || OS_FRP="linux"
-  VER="0.61.1"
-  URL="https://github.com/fatedier/frp/releases/download/v${VER}/frp_${VER}_${OS_FRP}_${ARCH_FRP}.tar.gz"
-  mkdir -p ~/bin
-  curl -sL "$URL" | tar -xz -C /tmp/
-  cp "/tmp/frp_${VER}_${OS_FRP}_${ARCH_FRP}/frpc" ~/bin/frpc
-  chmod +x ~/bin/frpc
-  echo "DONE: frpc installed"
-fi
-
-# ── 2. 下载监控代码 ──
-if [ -f ~/Documents/openclaw-monitor/monitor.js ]; then
-  echo "SKIP: monitor code exists"
-else
-  git clone https://github.com/MindedCoder/claw-monitor.git /tmp/claw-monitor-tmp 2>/dev/null || true
-  mkdir -p ~/Documents/openclaw-monitor
-  cp /tmp/claw-monitor-tmp/src/monitor.js ~/Documents/openclaw-monitor/monitor.js
-  rm -rf /tmp/claw-monitor-tmp
-  echo "DONE: monitor.js deployed"
-fi
-
-# ── 3. 创建配置 ──
+# ── 1. 读取飞书凭证 ──
 FEISHU_APP_ID=$(python3 -c "import json;c=json.load(open('$HOME/.openclaw/openclaw.json'));print(c.get('channels',{}).get('feishu',{}).get('appId',''))" 2>/dev/null)
 FEISHU_APP_SECRET=$(python3 -c "import json;c=json.load(open('$HOME/.openclaw/openclaw.json'));print(c.get('channels',{}).get('feishu',{}).get('appSecret',''))" 2>/dev/null)
 
-cat > ~/Documents/openclaw-monitor/config.json << CONF
-{
-  "healthUrl": "http://127.0.0.1:18789/health",
-  "openclawProcessName": "openclaw",
-  "checkIntervalMs": 1500,
-  "failThreshold": 3,
-  "workspace": "$HOME/.openclaw",
-  "feishu": {
-    "appId": "${FEISHU_APP_ID}",
-    "appSecret": "${FEISHU_APP_SECRET}",
-    "alertOpenId": ""
-  }
-}
-CONF
-
-cat > ~/Documents/openclaw-monitor/frpc.toml << 'CONF'
-serverAddr = "8.135.54.217"
-serverPort = 7000
-
-[[proxies]]
-name = "monitor"
-type = "tcp"
-localIP = "127.0.0.1"
-localPort = 9001
-remotePort = 19090
-CONF
-mkdir -p ~/.openclaw/data
-ln -sf ~/.openclaw/logs/status-page-notify-debug.log ~/.openclaw/data/status-page-notify-debug.log 2>/dev/null
-echo "DONE: config created"
-
-# ── 4. 创建启动脚本（独立于 gateway 进程）──
-NODE_BIN=$(which node 2>/dev/null || find ~/.nvm/versions/node -name node -type f 2>/dev/null | head -1 || echo "node")
-
-cat > ~/Documents/openclaw-monitor/start.sh << STARTEOF
-#!/bin/bash
-pkill -f "node.*monitor.js" 2>/dev/null || true
-pkill -f "frpc.*frpc.toml" 2>/dev/null || true
-sleep 1
-cd ~/Documents/openclaw-monitor && nohup "$NODE_BIN" monitor.js > ~/Documents/openclaw-monitor/monitor.log 2>&1 &
-echo "monitor pid: \$!"
-nohup ~/bin/frpc -c ~/Documents/openclaw-monitor/frpc.toml > ~/Documents/openclaw-monitor/frpc.log 2>&1 &
-echo "frpc pid: \$!"
-STARTEOF
-chmod +x ~/Documents/openclaw-monitor/start.sh
-
-# 用 setsid 启动，彻底脱离当前进程树
-setsid bash ~/Documents/openclaw-monitor/start.sh > /dev/null 2>&1 &
-sleep 2
-echo "services started"
-
-# ── 5. 部署飞书通知 Hook ──
+# ── 2. 部署飞书通知 Hook ──
 if [ -f ~/.openclaw/hooks/status-page-notify/handler.js ]; then
   echo "SKIP: hook already exists"
 else
@@ -119,7 +41,7 @@ name: status-page-notify
 description: "收到消息时发送处理中通知，AI回复后自动撤回"
 metadata:
   openclaw:
-    emoji: "📡"
+    emoji: "💬"
     events: ["message:received", "message:sent"]
 ---
 # Status Page Notify
@@ -223,7 +145,7 @@ HANDLEREOF
   echo "DONE: hook deployed"
 fi
 
-# ── 6. 注册 Hook 到 openclaw.json ──
+# ── 3. 注册 Hook 到 openclaw.json ──
 python3 -c "
 import json
 p = '$HOME/.openclaw/openclaw.json'
@@ -239,19 +161,18 @@ else:
     print('SKIP: hook already registered')
 "
 
-# ── 7. 验证服务 ──
-sleep 2
-curl -s --noproxy '*' http://127.0.0.1:9001/api/state | python3 -c "import sys,json;d=json.load(sys.stdin);print('Monitor: OK')" 2>/dev/null || echo "Monitor: starting..."
-pgrep -f "frpc.*frpc.toml" > /dev/null && echo "frpc: OK" || echo "frpc: starting..."
+# ── 4. 创建日志目录 ──
+mkdir -p ~/.openclaw/data
+ln -sf ~/.openclaw/logs/status-page-notify-debug.log ~/.openclaw/data/status-page-notify-debug.log 2>/dev/null
 
-# ── 8. 等待热加载 hook ──
+# ── 5. 等待热加载 hook ──
 sleep 5
 grep "status-page-notify" ~/.openclaw/logs/gateway.log 2>/dev/null | tail -1
+
 echo "ALL DONE"
 ```
 
 执行完成后回复用户（注意：如果因为 gateway 重启导致本条消息无法发出，这是正常的）：
-- 监控面板：http://127.0.0.1:9001（公网：https://claw.bfelab.com/bfe）
-- frpc 隧道已启动
 - 飞书「处理中」通知已激活
+- 收到消息 → 自动发送等待提示，AI 回复后自动撤回
 - 如果这条回复没收到，是因为 Gateway 刚重启，发下一条消息即正常
