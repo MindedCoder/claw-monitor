@@ -25,6 +25,21 @@ metadata:
 ```bash
 set -e
 
+# ── 0. 定位 Node 二进制 ──
+NODE_BIN=""
+if command -v node &>/dev/null; then
+  NODE_BIN=$(command -v node)
+elif [ -d "$HOME/.nvm/versions/node" ]; then
+  NODE_BIN=$(find "$HOME/.nvm/versions/node" -maxdepth 3 -name node -type f 2>/dev/null | sort -V | tail -1)
+elif [ -d "$HOME/.local/share/fnm" ]; then
+  NODE_BIN=$(find "$HOME/.local/share/fnm" -maxdepth 4 -name node -type f 2>/dev/null | sort -V | tail -1)
+fi
+if [ -z "$NODE_BIN" ]; then
+  echo "ERROR: node not found. Please install Node.js first."
+  exit 1
+fi
+echo "Using node: $NODE_BIN ($($NODE_BIN --version))"
+
 # ── 1. 安装 frpc ──
 if command -v frpc &>/dev/null || [ -f ~/bin/frpc ]; then
   echo "SKIP: frpc already installed"
@@ -42,16 +57,19 @@ else
   echo "DONE: frpc installed"
 fi
 
-# ── 2. 下载监控代码 ──
-if [ -f ~/Documents/openclaw-monitor/monitor.js ]; then
-  echo "SKIP: monitor code exists"
-else
-  git clone https://github.com/MindedCoder/claw-monitor.git /tmp/claw-monitor-tmp 2>/dev/null || true
-  mkdir -p ~/Documents/openclaw-monitor
+# ── 2. 下载/更新监控代码（每次都更新 monitor.js 确保最新） ──
+mkdir -p ~/Documents/openclaw-monitor
+rm -rf /tmp/claw-monitor-tmp
+git clone --depth 1 https://github.com/MindedCoder/claw-monitor.git /tmp/claw-monitor-tmp 2>/dev/null || true
+if [ -f /tmp/claw-monitor-tmp/src/monitor.js ]; then
   cp /tmp/claw-monitor-tmp/src/monitor.js ~/Documents/openclaw-monitor/monitor.js
-  rm -rf /tmp/claw-monitor-tmp
-  echo "DONE: monitor.js deployed"
+  echo "DONE: monitor.js deployed (updated)"
+else
+  echo "WARN: failed to download monitor.js from GitHub"
+  [ ! -f ~/Documents/openclaw-monitor/monitor.js ] && echo "ERROR: no monitor.js available" && exit 1
+  echo "Using existing monitor.js"
 fi
+rm -rf /tmp/claw-monitor-tmp
 
 # ── 3. 创建配置 ──
 FEISHU_APP_ID=$(python3 -c "import json;c=json.load(open('$HOME/.openclaw/openclaw.json'));print(c.get('channels',{}).get('feishu',{}).get('appId',''))" 2>/dev/null)
@@ -101,9 +119,23 @@ remotePort = 19090
 CONF
 echo "DONE: config created"
 
-# ── 4. 创建启动脚本（独立于 gateway 进程）──
-NODE_BIN=$(which node 2>/dev/null || find ~/.nvm/versions/node -name node -type f 2>/dev/null | head -1 || echo "node")
+# ── 4. 开启 gateway chatCompletions 端点 ──
+python3 -c "
+import json
+p = '$HOME/.openclaw/openclaw.json'
+c = json.load(open(p))
+gw = c.setdefault('gateway', {})
+http = gw.setdefault('http', {})
+ep = http.setdefault('endpoints', {})
+if not ep.get('chatCompletions', {}).get('enabled'):
+    ep['chatCompletions'] = {'enabled': True}
+    json.dump(c, open(p, 'w'), indent=2, ensure_ascii=False)
+    print('DONE: chatCompletions endpoint enabled')
+else:
+    print('SKIP: chatCompletions already enabled')
+"
 
+# ── 5. 创建启动脚本（独立于 gateway 进程）──
 cat > ~/Documents/openclaw-monitor/start.sh << STARTEOF
 #!/bin/bash
 pkill -f "node.*monitor.js" 2>/dev/null || true
@@ -121,9 +153,9 @@ setsid bash ~/Documents/openclaw-monitor/start.sh > /dev/null 2>&1 &
 sleep 2
 echo "services started"
 
-# ── 5. 验证服务 ──
-sleep 2
-curl -s --noproxy '*' http://127.0.0.1:9001/api/state | python3 -c "import sys,json;d=json.load(sys.stdin);print('Monitor: OK')" 2>/dev/null || echo "Monitor: starting..."
+# ── 6. 验证服务 ──
+sleep 3
+curl -s --noproxy '*' http://127.0.0.1:9001/api/status | python3 -c "import sys,json;d=json.load(sys.stdin);print('Monitor: OK')" 2>/dev/null || echo "Monitor: starting..."
 pgrep -f "frpc.*frpc.toml" > /dev/null && echo "frpc: OK" || echo "frpc: starting..."
 
 echo "ALL DONE"
@@ -132,3 +164,4 @@ echo "ALL DONE"
 执行完成后回复用户：
 - 监控面板：http://127.0.0.1:9001（公网：https://claw.bfelab.com/bfe）
 - frpc 隧道已启动
+- Chat 探针 + Ping 探针已启用
