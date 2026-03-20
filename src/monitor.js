@@ -157,15 +157,53 @@ async function checkHealth(url) {
 //  3. Feishu Chat Stats
 // ══════════════════════════════════════════
 function parseFeishuLogs(config) {
-  const logFile = path.join(config.workspace, 'data', 'status-page-notify-debug.log');
-  if (!fs.existsSync(logFile)) return;
+  // 优先从 feishu-notify hook 日志读取（有更多元数据）
+  const hookLog = path.join(config.workspace, 'data', 'status-page-notify-debug.log');
+  if (fs.existsSync(hookLog)) {
+    try {
+      const content = fs.readFileSync(hookLog, 'utf8');
+      const lines = content.trim().split('\n').filter(Boolean);
+      const users = new Set(); const messages = [];
+      for (const line of lines) {
+        const m = line.match(/^(\S+) event (.+)$/);
+        if (m) { try { const d = JSON.parse(m[2]); const ctx = d.context || {}; const name = ctx.metadata?.senderName || 'unknown'; users.add(name); messages.push({ time: m[1], name, senderId: ctx.metadata?.senderId || '' }); } catch {} }
+      }
+      if (messages.length > 0) {
+        state.feishuChat.totalMessages = messages.length;
+        state.feishuChat.recentMessages = messages.slice(-20);
+        state.feishuChat.uniqueUsers = users;
+        state.feishuChat.lastActivity = messages[messages.length - 1].time;
+        return;
+      }
+    } catch {}
+  }
+
+  // fallback: 从 gateway.log 解析飞书消息
   try {
-    const content = fs.readFileSync(logFile, 'utf8');
-    const lines = content.trim().split('\n').filter(Boolean);
+    const stat = fs.statSync(OPENCLAW_GATEWAY_LOG);
+    const readSize = Math.min(stat.size, 131072); // 读最后 128KB
+    const fd = fs.openSync(OPENCLAW_GATEWAY_LOG, 'r');
+    const buf = Buffer.alloc(readSize);
+    fs.readSync(fd, buf, 0, readSize, stat.size - readSize);
+    fs.closeSync(fd);
+    const tail = buf.toString('utf8');
+    const lines = tail.split('\n');
     const users = new Set(); const messages = [];
     for (const line of lines) {
-      const m = line.match(/^(\S+) event (.+)$/);
-      if (m) { try { const d = JSON.parse(m[2]); const ctx = d.context || {}; const name = ctx.metadata?.senderName || 'unknown'; users.add(name); messages.push({ time: m[1], name, senderId: ctx.metadata?.senderId || '' }); } catch {} }
+      // "received message from ou_xxxx in ... (p2p)" or "DM from ou_xxxx: ..."
+      const recv = line.match(/^(\S+)\s+.*received message from (\S+) in .+\((\w+)\)/);
+      if (recv) {
+        const uid = recv[2].slice(0, 12);
+        users.add(uid);
+        messages.push({ time: recv[1], name: uid, senderId: recv[2] });
+        continue;
+      }
+      const dm = line.match(/^(\S+)\s+.*DM from (\S+):/);
+      if (dm) {
+        const uid = dm[2].slice(0, 12);
+        users.add(uid);
+        messages.push({ time: dm[1], name: uid, senderId: dm[2] });
+      }
     }
     state.feishuChat.totalMessages = messages.length;
     state.feishuChat.recentMessages = messages.slice(-20);
@@ -634,7 +672,7 @@ td{padding:4px 8px 4px 0;font-size:12px;border-bottom:1px solid rgba(148,163,184
       <div class="hbars">${bars||'<span class="dim">等待数据...</span>'}</div>
     </div>
 
-    <!-- 飞书会话 -->
+    ${hasFeishu ? `<!-- 飞书会话 -->
     <div class="card">
       <div class="card-head">
         <span class="card-title">飞书会话</span>
@@ -648,7 +686,7 @@ td{padding:4px 8px 4px 0;font-size:12px;border-bottom:1px solid rgba(148,163,184
       <div style="max-height:180px;overflow-y:auto;-webkit-overflow-scrolling:touch">
         <table>${sessionRows||'<tr><td class="dim">暂无会话</td></tr>'}</table>
       </div>
-    </div>
+    </div>` : ''}
 
     <!-- 系统日志 -->
     <div class="card">
@@ -726,13 +764,15 @@ function startWebServer(config) {
       return;
     }
     if (urlPath === '/api/chat-probe') {
+      const latest = state.chatProbe.history.length > 0 ? state.chatProbe.history[state.chatProbe.history.length - 1] : null;
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' });
-      res.end(JSON.stringify(state.chatProbe));
+      res.end(JSON.stringify({ data: latest }));
       return;
     }
     if (urlPath === '/api/ping-probe') {
+      const latest = state.pingProbe.history.length > 0 ? state.pingProbe.history[state.pingProbe.history.length - 1] : null;
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' });
-      res.end(JSON.stringify(state.pingProbe));
+      res.end(JSON.stringify({ data: latest }));
       return;
     }
     if (urlPath === '/api/html') {
