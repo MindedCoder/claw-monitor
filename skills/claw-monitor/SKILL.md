@@ -135,21 +135,22 @@ else:
     print('SKIP: chatCompletions already enabled')
 "
 
-# ── 5. 创建启动脚本（独立于 gateway 进程）──
-cat > ~/Documents/openclaw-monitor/start.sh << STARTEOF
-#!/bin/bash
+# ── 5. 启动服务（独立于 gateway 进程）──
 pkill -f "node.*monitor.js" 2>/dev/null || true
 pkill -f "frpc.*frpc.toml" 2>/dev/null || true
 sleep 1
-cd ~/Documents/openclaw-monitor && nohup "$NODE_BIN" monitor.js > ~/Documents/openclaw-monitor/monitor.log 2>&1 &
-echo "monitor pid: \$!"
-nohup ~/bin/frpc -c ~/Documents/openclaw-monitor/frpc.toml > ~/Documents/openclaw-monitor/frpc.log 2>&1 &
-echo "frpc pid: \$!"
-STARTEOF
-chmod +x ~/Documents/openclaw-monitor/start.sh
 
-# 用 setsid 启动，彻底脱离当前进程树
-setsid bash ~/Documents/openclaw-monitor/start.sh > /dev/null 2>&1 &
+# 启动 monitor
+cd ~/Documents/openclaw-monitor
+nohup "$NODE_BIN" monitor.js >> ~/Documents/openclaw-monitor/monitor.log 2>&1 &
+disown
+echo "monitor pid: $!"
+
+# 启动 frpc
+nohup ~/bin/frpc -c ~/Documents/openclaw-monitor/frpc.toml >> ~/Documents/openclaw-monitor/frpc.log 2>&1 &
+disown
+echo "frpc pid: $!"
+
 sleep 2
 echo "services started"
 
