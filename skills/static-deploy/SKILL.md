@@ -1,6 +1,6 @@
 ---
 name: static-deploy
-description: "将静态 HTML 文件部署到监控面板，通过 /路径/文件名.html 访问"
+description: "将静态 HTML 及资源文件部署到监控面板，按 /bfe/日期/平台/时分秒.html 规则访问"
 metadata:
   openclaw:
     emoji: "🌐"
@@ -13,56 +13,82 @@ metadata:
 
 ## 规则
 
-1. 读完本文件后，先确认用户提供了：**源文件路径** 和 **访问路径**
-2. 如果用户只给了文件路径没给访问路径，从文件路径推断合理的访问路径
-3. 所有步骤合并成一个 exec 调用执行
-4. 执行完成后回复用户访问地址
+1. 读完本文件后，先确认用户提供了以下三个参数，缺少则询问
+2. 所有步骤合并成一个 exec 调用执行
+3. 执行完成后回复用户访问地址
 
 ---
 
-### 参数说明
+### 参数说明（由 AI 从对话中提取并填入脚本）
 
-- `SOURCE`：源 HTML 文件的绝对路径（用户提供）
-- `URL_PATH`：期望的访问路径（如 `youzan/data.html`），不带前导 `/`
+| 变量 | 说明 | 示例 |
+|------|------|------|
+| `SOURCE_HTML` | 源 HTML 文件绝对路径 | `/Users/me/Downloads/hn.html` |
+| `PLATFORM` | 平台名称 | `youzan`、`taobao`、`hn` |
+| `RESOURCE_DIR` | 资源文件夹名称（与 HTML 同级的依赖目录，无则留空） | `hn_files` |
+
+### 部署路径规则
+
+```
+/bfe/{YYYYMMDD}/{PLATFORM}/{HHMMSS}.html      ← HTML（重命名）
+/bfe/{YYYYMMDD}/{PLATFORM}/{RESOURCE_DIR}/     ← 资源文件（原名保留）
+```
 
 ### 执行以下脚本
 
 ```bash
 set -e
 
-# 用户需提供这两个变量（由 AI 从对话中提取并填入）
-SOURCE="__SOURCE_FILE__"
-URL_PATH="__URL_PATH__"
+# ── 参数（AI 填入）──
+SOURCE_HTML="__SOURCE_HTML__"
+PLATFORM="__PLATFORM__"
+RESOURCE_DIR="__RESOURCE_DIR__"
 
-# 验证源文件
-if [ ! -f "$SOURCE" ]; then
-  echo "ERROR: 源文件不存在: $SOURCE"
+# ── 验证源文件 ──
+if [ ! -f "$SOURCE_HTML" ]; then
+  echo "ERROR: 源文件不存在: $SOURCE_HTML"
   exit 1
 fi
 
-# 部署目录
+SOURCE_PARENT="$(dirname "$SOURCE_HTML")"
+
+# ── 生成路径 ──
+DATE_STR=$(date +%Y%m%d)
+TIME_STR=$(date +%H%M%S)
 STATIC_DIR="$HOME/Documents/openclaw-monitor/static"
-TARGET_DIR="$STATIC_DIR/$(dirname "$URL_PATH")"
-TARGET_FILE="$STATIC_DIR/$URL_PATH"
+DEPLOY_DIR="$STATIC_DIR/bfe/$DATE_STR/$PLATFORM"
 
-mkdir -p "$TARGET_DIR"
-cp "$SOURCE" "$TARGET_FILE"
-echo "DONE: deployed $SOURCE -> $TARGET_FILE"
+mkdir -p "$DEPLOY_DIR"
 
-# 验证可访问
+# ── 部署 HTML（重命名为 时分秒.html）──
+cp "$SOURCE_HTML" "$DEPLOY_DIR/${TIME_STR}.html"
+echo "DONE: HTML -> $DEPLOY_DIR/${TIME_STR}.html"
+
+# ── 部署资源文件 ──
+if [ -n "$RESOURCE_DIR" ] && [ -d "$SOURCE_PARENT/$RESOURCE_DIR" ]; then
+  rm -rf "$DEPLOY_DIR/$RESOURCE_DIR"
+  cp -r "$SOURCE_PARENT/$RESOURCE_DIR" "$DEPLOY_DIR/$RESOURCE_DIR"
+  echo "DONE: resources -> $DEPLOY_DIR/$RESOURCE_DIR/"
+elif [ -n "$RESOURCE_DIR" ]; then
+  echo "WARN: 资源目录不存在: $SOURCE_PARENT/$RESOURCE_DIR"
+fi
+
+# ── 验证 ──
 sleep 1
+URL_PATH="bfe/$DATE_STR/$PLATFORM/${TIME_STR}.html"
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --noproxy '*' "http://127.0.0.1:9001/$URL_PATH" 2>/dev/null || echo "000")
 if [ "$HTTP_CODE" = "200" ]; then
   echo "VERIFY: OK (HTTP 200)"
 else
-  echo "VERIFY: monitor may need restart (HTTP $HTTP_CODE)"
+  echo "VERIFY: HTTP $HTTP_CODE — monitor 可能需要重启"
 fi
 
+echo ""
+echo "访问地址: http://127.0.0.1:9001/$URL_PATH"
 echo "ALL DONE"
 ```
 
 执行完成后回复用户：
-- 本地访问：http://127.0.0.1:9001/{URL_PATH}
-- 公网访问：https://claw.bfelab.com/bfe/{URL_PATH}
-- 文件位置：~/Documents/openclaw-monitor/static/{URL_PATH}
-- 如需更新，重新执行本 skill 或直接覆盖 static 目录下的文件即可
+- 本地访问：http://127.0.0.1:9001/bfe/{YYYYMMDD}/{PLATFORM}/{HHMMSS}.html
+- 公网访问：https://claw.bfelab.com/bfe/{YYYYMMDD}/{PLATFORM}/{HHMMSS}.html
+- 文件位置：~/Documents/openclaw-monitor/static/bfe/{YYYYMMDD}/{PLATFORM}/
