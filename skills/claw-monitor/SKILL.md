@@ -135,29 +135,155 @@ else:
     print('SKIP: chatCompletions already enabled')
 "
 
-# ── 5. 启动服务（独立于 gateway 进程）──
+# ── 5. 安装为系统服务（自动重启 + 开机启动）──
+MONITOR_DIR="$HOME/Documents/openclaw-monitor"
+FRPC_BIN="$HOME/bin/frpc"
+
 pkill -f "node.*monitor.js" 2>/dev/null || true
 pkill -f "frpc.*frpc.toml" 2>/dev/null || true
 sleep 1
 
-# 启动 monitor
-cd ~/Documents/openclaw-monitor
-nohup "$NODE_BIN" monitor.js >> ~/Documents/openclaw-monitor/monitor.log 2>&1 &
-disown
-echo "monitor pid: $!"
+OS_TYPE=$(uname -s)
 
-# 启动 frpc
-nohup ~/bin/frpc -c ~/Documents/openclaw-monitor/frpc.toml >> ~/Documents/openclaw-monitor/frpc.log 2>&1 &
-disown
-echo "frpc pid: $!"
+if [ "$OS_TYPE" = "Darwin" ]; then
+  # ── macOS: 使用 launchd ──
+  LAUNCH_DIR="$HOME/Library/LaunchAgents"
+  mkdir -p "$LAUNCH_DIR"
 
-sleep 2
+  # monitor LaunchAgent
+  MONITOR_PLIST="$LAUNCH_DIR/com.openclaw.monitor.plist"
+  cat > "$MONITOR_PLIST" << PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.openclaw.monitor</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${NODE_BIN}</string>
+    <string>${MONITOR_DIR}/monitor.js</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>${MONITOR_DIR}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>${HOME}</string>
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:${HOME}/bin</string>
+    <key>WEB_PORT</key>
+    <string>9001</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>5</integer>
+  <key>StandardOutPath</key>
+  <string>${MONITOR_DIR}/monitor.log</string>
+  <key>StandardErrorPath</key>
+  <string>${MONITOR_DIR}/monitor.err.log</string>
+</dict>
+</plist>
+PLIST
+
+  # frpc LaunchAgent
+  FRPC_PLIST="$LAUNCH_DIR/com.openclaw.frpc.plist"
+  cat > "$FRPC_PLIST" << PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.openclaw.frpc</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${FRPC_BIN}</string>
+    <string>-c</string>
+    <string>${MONITOR_DIR}/frpc.toml</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>${MONITOR_DIR}</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>5</integer>
+  <key>StandardOutPath</key>
+  <string>${MONITOR_DIR}/frpc.log</string>
+  <key>StandardErrorPath</key>
+  <string>${MONITOR_DIR}/frpc.err.log</string>
+</dict>
+</plist>
+PLIST
+
+  # 加载服务
+  launchctl bootout gui/$(id -u) "$MONITOR_PLIST" 2>/dev/null || true
+  launchctl bootout gui/$(id -u) "$FRPC_PLIST" 2>/dev/null || true
+  launchctl bootstrap gui/$(id -u) "$MONITOR_PLIST"
+  launchctl bootstrap gui/$(id -u) "$FRPC_PLIST"
+  echo "DONE: launchd services installed (KeepAlive + RunAtLoad)"
+
+else
+  # ── Linux: 使用 systemd user service ──
+  SYSTEMD_DIR="$HOME/.config/systemd/user"
+  mkdir -p "$SYSTEMD_DIR"
+
+  cat > "$SYSTEMD_DIR/openclaw-monitor.service" << UNIT
+[Unit]
+Description=OpenClaw Monitor Dashboard
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${NODE_BIN} ${MONITOR_DIR}/monitor.js
+WorkingDirectory=${MONITOR_DIR}
+Environment=HOME=${HOME}
+Environment=WEB_PORT=9001
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+UNIT
+
+  cat > "$SYSTEMD_DIR/openclaw-frpc.service" << UNIT
+[Unit]
+Description=OpenClaw frpc Tunnel
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${FRPC_BIN} -c ${MONITOR_DIR}/frpc.toml
+WorkingDirectory=${MONITOR_DIR}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+UNIT
+
+  systemctl --user daemon-reload
+  systemctl --user enable --now openclaw-monitor.service
+  systemctl --user enable --now openclaw-frpc.service
+  # 允许用户服务在未登录时运行
+  loginctl enable-linger $(whoami) 2>/dev/null || true
+  echo "DONE: systemd user services installed (Restart=always + enable)"
+fi
+
+sleep 3
 echo "services started"
 
 # ── 6. 验证服务 ──
-sleep 3
 curl -s --noproxy '*' http://127.0.0.1:9001/api/status | python3 -c "import sys,json;d=json.load(sys.stdin);print('Monitor: OK')" 2>/dev/null || echo "Monitor: starting..."
-pgrep -f "frpc.*frpc.toml" > /dev/null && echo "frpc: OK" || echo "frpc: starting..."
+if [ "$OS_TYPE" = "Darwin" ]; then
+  launchctl print gui/$(id -u)/com.openclaw.frpc 2>/dev/null | grep -q "state = running" && echo "frpc: OK" || echo "frpc: starting..."
+else
+  systemctl --user is-active openclaw-frpc.service &>/dev/null && echo "frpc: OK" || echo "frpc: starting..."
+fi
 
 echo "ALL DONE"
 ```
@@ -166,3 +292,6 @@ echo "ALL DONE"
 - 监控面板：http://127.0.0.1:9001（公网：https://claw.bfelab.com/bfe）
 - frpc 隧道已启动
 - Chat 探针 + Ping 探针已启用
+- 已安装为系统服务：进程崩溃自动重启，开机自动启动
+- macOS 管理命令：`launchctl kickstart -k gui/$(id -u)/com.openclaw.monitor` (重启) / `launchctl bootout gui/$(id -u)/com.openclaw.monitor` (停止)
+- Linux 管理命令：`systemctl --user restart openclaw-monitor` / `systemctl --user stop openclaw-monitor`
