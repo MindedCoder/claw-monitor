@@ -670,7 +670,7 @@ td{padding:4px 8px 4px 0;font-size:12px;border-bottom:1px solid rgba(148,163,184
 (function(){
   async function refresh(){
     try{
-      const r = await fetch('/api/html');
+      const r = await fetch('${BASE_PATH}/api/html');
       if(!r.ok) return;
       const html = await r.text();
       document.querySelector('.app').innerHTML = html;
@@ -687,24 +687,55 @@ td{padding:4px 8px 4px 0;font-size:12px;border-bottom:1px solid rgba(148,163,184
 // ══════════════════════════════════════════
 //  Web Server
 // ══════════════════════════════════════════
+let BASE_PATH = '';
+
+function generateFrpcToml(config) {
+  const name = config.instanceName;
+  if (!name) return;
+  const frpcPath = path.join(__dirname, 'frpc.toml');
+  const frpc = config.frpc || {};
+  const toml = `serverAddr = "${frpc.serverAddr || '8.135.54.217'}"
+serverPort = ${frpc.serverPort || 7000}
+
+[[proxies]]
+name = "${name}"
+type = "http"
+localIP = "127.0.0.1"
+localPort = ${WEB_PORT}
+customDomains = ["${frpc.customDomain || 'claw.bfelab.com'}"]
+locations = ["/${name}"]
+`;
+  fs.writeFileSync(frpcPath, toml);
+  log(`[FRPC] Generated frpc.toml: name=${name}, location=/${name}`);
+}
+
 function startWebServer(config) {
+  BASE_PATH = config.instanceName ? '/' + config.instanceName : '';
+  const basePath = BASE_PATH;
+
   http.createServer((req, res) => {
-    if (req.url === '/api/status') {
+    // Strip basePath prefix for routing
+    let urlPath = req.url;
+    if (basePath && urlPath.startsWith(basePath)) {
+      urlPath = urlPath.slice(basePath.length) || '/';
+    }
+
+    if (urlPath === '/api/status') {
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' });
       res.end(JSON.stringify({ ...state, feishuChat: { ...state.feishuChat, uniqueUsers: [...state.feishuChat.uniqueUsers] } }));
       return;
     }
-    if (req.url === '/api/chat-probe') {
+    if (urlPath === '/api/chat-probe') {
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' });
       res.end(JSON.stringify(state.chatProbe));
       return;
     }
-    if (req.url === '/api/ping-probe') {
+    if (urlPath === '/api/ping-probe') {
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' });
       res.end(JSON.stringify(state.pingProbe));
       return;
     }
-    if (req.url === '/api/html') {
+    if (urlPath === '/api/html') {
       // Return only the inner content of .app for fast DOM swap
       const full = renderDashboard(config);
       const start = full.indexOf('<div class="app">') + '<div class="app">'.length;
@@ -717,7 +748,7 @@ function startWebServer(config) {
     // ── 静态文件服务 ──
     // 从 static/ 目录提供文件，如 /youzan/data.html -> static/youzan/data.html
     const STATIC_DIR = path.join(DATA_DIR, 'static');
-    const parsed = new URL(req.url, 'http://localhost');
+    const parsed = new URL(urlPath, 'http://localhost');
     const safePath = path.normalize(parsed.pathname).replace(/^(\.\.[/\\])+/, '');
     const filePath = path.join(STATIC_DIR, safePath);
 
@@ -748,7 +779,17 @@ function startWebServer(config) {
 
 async function main() {
   const config = loadConfig();
-  log(`[START] Monitoring ${config.healthUrl} every ${config.checkIntervalMs / 1000}s`);
+
+  // 从 openclaw.json 读取 monitor 配置，作为唯一配置入口
+  try {
+    const oc = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG, 'utf8'));
+    const mon = oc.monitor || {};
+    if (mon.instanceName) config.instanceName = mon.instanceName;
+    if (mon.frpc) config.frpc = { ...config.frpc, ...mon.frpc };
+  } catch {}
+
+  log(`[START] Monitoring ${config.healthUrl} every ${config.checkIntervalMs / 1000}s (instance=${config.instanceName || 'default'})`);
+  generateFrpcToml(config);
   pushSystemLog('ok', '监控服务初始化完成');
   startWebServer(config);
   await tick(config);
