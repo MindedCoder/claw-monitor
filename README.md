@@ -111,6 +111,39 @@ bash setup.sh
 
 面板每 1.5 秒自动刷新，移动端适配。
 
+#### Chat 探针
+
+定时调用 OpenClaw 的 `/v1/chat/completions` 端点（OpenAI 兼容），验证模型聊天是否正常。记录每次探测的：
+
+- 时间、响应耗时 (ms)、成功/失败、模型回复内容、错误信息
+
+配置项（在 monitor config.json 中）：
+
+| 字段 | 说明 | 默认值 |
+|------|------|--------|
+| `chatProbe.enabled` | 是否启用 | `false` |
+| `chatProbe.intervalMs` | 探测间隔 | `60000` (1分钟) |
+| `chatProbe.url` | 聊天端点 | `http://127.0.0.1:18789/v1/chat/completions` |
+| `chatProbe.token` | Gateway 认证 token | — |
+| `chatProbe.model` | 模型名称 | `openclaw:main` |
+| `chatProbe.testMessage` | 测试消息内容 | `ping` |
+| `chatProbe.timeoutMs` | 超时时间 | `30000` |
+
+#### Ping 探针
+
+定时 HEAD 请求 Google（或自定义 URL），检测外网连通性。记录：
+
+- 时间、响应耗时 (ms)、HTTP 状态码、成功/失败、错误信息
+
+配置项：
+
+| 字段 | 说明 | 默认值 |
+|------|------|--------|
+| `pingProbe.enabled` | 是否启用 | `false` |
+| `pingProbe.intervalMs` | 探测间隔 | `30000` (30秒) |
+| `pingProbe.url` | 目标 URL | `https://www.google.com` |
+| `pingProbe.timeoutMs` | 超时时间 | `10000` |
+
 #### API 端点
 
 | 路径 | 说明 |
@@ -118,6 +151,8 @@ bash setup.sh
 | `GET /` | 完整仪表盘 HTML 页面 |
 | `GET /api/status` | JSON 格式的完整状态数据 |
 | `GET /api/html` | 仪表盘内部 HTML 片段（用于局部刷新） |
+| `GET /api/chat-probe` | Chat 探针历史记录（最近 200 条） |
+| `GET /api/ping-probe` | Ping 探针历史记录（最近 200 条） |
 
 ### 2. frpc 隧道
 

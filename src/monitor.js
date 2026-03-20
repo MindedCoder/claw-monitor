@@ -27,12 +27,16 @@ const state = {
   feishuChat: { totalMessages: 0, recentMessages: [], uniqueUsers: new Set(), lastActivity: null },
   model: { totalTokensIn: 0, totalTokensOut: 0, totalCost: 0, estimated: true },
   system: { logs: [] },
+  chatProbe: { history: [], lastCheck: null },
+  pingProbe: { history: [], lastCheck: null },
   startedAt: new Date().toISOString(),
   healthHistory: [],
 };
 
 function pushHealthHistory(e) { state.healthHistory.push(e); if (state.healthHistory.length > 100) state.healthHistory.shift(); }
 function pushSystemLog(level, msg) { state.system.logs.push({ time: new Date().toISOString(), level, msg }); if (state.system.logs.length > 300) state.system.logs.shift(); }
+function pushChatProbe(e) { state.chatProbe.history.push(e); if (state.chatProbe.history.length > 200) state.chatProbe.history.shift(); state.chatProbe.lastCheck = e.time; }
+function pushPingProbe(e) { state.pingProbe.history.push(e); if (state.pingProbe.history.length > 200) state.pingProbe.history.shift(); state.pingProbe.lastCheck = e.time; }
 
 // ══════════════════════════════════════════
 //  Log Translation — 把英文日志翻译成人话
@@ -288,6 +292,97 @@ function parseGatewayLogs() {
       if (translated.length > 3) pushSystemLog(level, translated);
     } catch {}
   }
+}
+
+// ══════════════════════════════════════════
+//  Chat Probe — 定时用 OpenClaw 模型测试聊天
+// ══════════════════════════════════════════
+async function chatProbe(config) {
+  const probe = config.chatProbe;
+  if (!probe?.enabled) return;
+
+  const gatewayUrl = probe.url || `http://127.0.0.1:${config.gatewayPort || 18789}/v1/chat/completions`;
+  const token = probe.token || '';
+  const model = probe.model || 'openclaw:main';
+  const testMessage = probe.testMessage || 'ping';
+  const timeoutMs = probe.timeoutMs || 30000;
+
+  const entry = { time: new Date().toISOString(), ok: false, responseMs: null, reply: null, error: null };
+  const start = Date.now();
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(gatewayUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: testMessage }],
+        max_tokens: 50,
+        stream: false
+      }),
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+
+    entry.responseMs = Date.now() - start;
+
+    if (!res.ok) {
+      entry.error = `HTTP ${res.status} ${res.statusText}`;
+      const body = await res.text().catch(() => '');
+      if (body) entry.error += `: ${body.slice(0, 200)}`;
+    } else {
+      const data = await res.json();
+      entry.ok = true;
+      entry.reply = data.choices?.[0]?.message?.content?.slice(0, 200) || '(empty)';
+    }
+  } catch (err) {
+    entry.responseMs = Date.now() - start;
+    entry.error = err.name === 'AbortError' ? `timeout (${timeoutMs}ms)` : err.message;
+  }
+
+  pushChatProbe(entry);
+  const status = entry.ok ? 'ok' : 'error';
+  pushSystemLog(status, `Chat 探针: ${entry.ok ? '正常' : '异常'} (${entry.responseMs}ms)${entry.error ? ' — ' + entry.error : ''}`);
+  log(`[CHAT-PROBE] ok=${entry.ok} ${entry.responseMs}ms ${entry.error || ''}`);
+}
+
+// ══════════════════════════════════════════
+//  Ping Probe — 定时 ping Google
+// ══════════════════════════════════════════
+async function pingProbe(config) {
+  const probe = config.pingProbe;
+  if (!probe?.enabled) return;
+
+  const url = probe.url || 'https://www.google.com';
+  const timeoutMs = probe.timeoutMs || 10000;
+
+  const entry = { time: new Date().toISOString(), ok: false, responseMs: null, statusCode: null, error: null, url };
+  const start = Date.now();
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    const res = await fetch(url, { method: 'HEAD', signal: controller.signal, redirect: 'follow' });
+    clearTimeout(timer);
+
+    entry.responseMs = Date.now() - start;
+    entry.statusCode = res.status;
+    entry.ok = res.ok;
+    if (!res.ok) entry.error = `HTTP ${res.status}`;
+  } catch (err) {
+    entry.responseMs = Date.now() - start;
+    entry.error = err.name === 'AbortError' ? `timeout (${timeoutMs}ms)` : err.message;
+  }
+
+  pushPingProbe(entry);
+  log(`[PING-PROBE] ${url} ok=${entry.ok} ${entry.responseMs}ms ${entry.error || ''}`);
 }
 
 // ══════════════════════════════════════════
@@ -598,6 +693,16 @@ function startWebServer(config) {
       res.end(JSON.stringify({ ...state, feishuChat: { ...state.feishuChat, uniqueUsers: [...state.feishuChat.uniqueUsers] } }));
       return;
     }
+    if (req.url === '/api/chat-probe') {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' });
+      res.end(JSON.stringify(state.chatProbe));
+      return;
+    }
+    if (req.url === '/api/ping-probe') {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' });
+      res.end(JSON.stringify(state.pingProbe));
+      return;
+    }
     if (req.url === '/api/html') {
       // Return only the inner content of .app for fast DOM swap
       const full = renderDashboard(config);
@@ -623,6 +728,24 @@ async function main() {
   startWebServer(config);
   await tick(config);
   setInterval(() => tick(config), config.checkIntervalMs);
+
+  // Chat Probe 定时器
+  if (config.chatProbe?.enabled) {
+    const interval = config.chatProbe.intervalMs || 60000;
+    log(`[CHAT-PROBE] enabled, interval ${interval / 1000}s`);
+    pushSystemLog('ok', `Chat 探针已启动，间隔 ${interval / 1000}秒`);
+    chatProbe(config);
+    setInterval(() => chatProbe(config), interval);
+  }
+
+  // Ping Probe 定时器
+  if (config.pingProbe?.enabled) {
+    const interval = config.pingProbe.intervalMs || 30000;
+    log(`[PING-PROBE] enabled, interval ${interval / 1000}s`);
+    pushSystemLog('ok', `Ping 探针已启动，间隔 ${interval / 1000}秒`);
+    pingProbe(config);
+    setInterval(() => pingProbe(config), interval);
+  }
 }
 
 main();

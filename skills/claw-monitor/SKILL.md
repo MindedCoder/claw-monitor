@@ -56,6 +56,7 @@ fi
 # ── 3. 创建配置 ──
 FEISHU_APP_ID=$(python3 -c "import json;c=json.load(open('$HOME/.openclaw/openclaw.json'));print(c.get('channels',{}).get('feishu',{}).get('appId',''))" 2>/dev/null)
 FEISHU_APP_SECRET=$(python3 -c "import json;c=json.load(open('$HOME/.openclaw/openclaw.json'));print(c.get('channels',{}).get('feishu',{}).get('appSecret',''))" 2>/dev/null)
+GW_TOKEN=$(python3 -c "import json;c=json.load(open('$HOME/.openclaw/openclaw.json'));print(c.get('gateway',{}).get('auth',{}).get('token',''))" 2>/dev/null)
 
 cat > ~/Documents/openclaw-monitor/config.json << CONF
 {
@@ -68,6 +69,21 @@ cat > ~/Documents/openclaw-monitor/config.json << CONF
     "appId": "${FEISHU_APP_ID}",
     "appSecret": "${FEISHU_APP_SECRET}",
     "alertOpenId": ""
+  },
+  "chatProbe": {
+    "enabled": true,
+    "intervalMs": 60000,
+    "url": "http://127.0.0.1:18789/v1/chat/completions",
+    "token": "${GW_TOKEN}",
+    "model": "openclaw:main",
+    "testMessage": "ping",
+    "timeoutMs": 30000
+  },
+  "pingProbe": {
+    "enabled": true,
+    "intervalMs": 30000,
+    "url": "https://www.google.com",
+    "timeoutMs": 10000
   }
 }
 CONF
