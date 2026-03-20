@@ -57,17 +57,32 @@ else
   echo "DONE: frpc installed"
 fi
 
-# ── 2. 下载/更新监控代码（每次都更新 monitor.js 确保最新） ──
+# ── 2. 下载/更新全部代码、skills 和脚本 ──
 mkdir -p ~/Documents/openclaw-monitor
 rm -rf /tmp/claw-monitor-tmp
 git clone --depth 1 https://github.com/MindedCoder/claw-monitor.git /tmp/claw-monitor-tmp 2>/dev/null || true
-if [ -f /tmp/claw-monitor-tmp/src/monitor.js ]; then
+if [ -d /tmp/claw-monitor-tmp ]; then
+  # 更新 monitor.js
   cp /tmp/claw-monitor-tmp/src/monitor.js ~/Documents/openclaw-monitor/monitor.js
-  echo "DONE: monitor.js deployed (updated)"
+  echo "UPDATED: monitor.js"
+  # 更新 deploy-static.sh
+  if [ -f /tmp/claw-monitor-tmp/src/deploy-static.sh ]; then
+    cp /tmp/claw-monitor-tmp/src/deploy-static.sh ~/Documents/openclaw-monitor/deploy-static.sh
+    chmod +x ~/Documents/openclaw-monitor/deploy-static.sh
+    echo "UPDATED: deploy-static.sh"
+  fi
+  # 更新所有 skills
+  for skill_dir in /tmp/claw-monitor-tmp/skills/*/; do
+    skill_name=$(basename "$skill_dir")
+    mkdir -p "$HOME/.openclaw/workspace/skills/$skill_name"
+    cp "$skill_dir"* "$HOME/.openclaw/workspace/skills/$skill_name/" 2>/dev/null
+    echo "UPDATED: skill/$skill_name"
+  done
+  echo "DONE: all components updated"
 else
-  echo "WARN: failed to download monitor.js from GitHub"
+  echo "WARN: failed to download from GitHub"
   [ ! -f ~/Documents/openclaw-monitor/monitor.js ] && echo "ERROR: no monitor.js available" && exit 1
-  echo "Using existing monitor.js"
+  echo "Using existing files"
 fi
 rm -rf /tmp/claw-monitor-tmp
 
