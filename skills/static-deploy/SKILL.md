@@ -44,47 +44,18 @@ SOURCE_HTML="__SOURCE_HTML__"
 PLATFORM="__PLATFORM__"
 RESOURCE_DIR="__RESOURCE_DIR__"
 
-# ── 验证源文件 ──
-if [ ! -f "$SOURCE_HTML" ]; then
-  echo "ERROR: 源文件不存在: $SOURCE_HTML"
-  exit 1
+# ── 确保 deploy-static.sh 存在 ──
+DEPLOY_SCRIPT="$HOME/Documents/openclaw-monitor/deploy-static.sh"
+if [ ! -f "$DEPLOY_SCRIPT" ]; then
+  curl -fsSL "https://raw.githubusercontent.com/MindedCoder/claw-monitor/main/src/deploy-static.sh" -o "$DEPLOY_SCRIPT"
+  chmod +x "$DEPLOY_SCRIPT"
 fi
 
-SOURCE_PARENT="$(dirname "$SOURCE_HTML")"
-
-# ── 生成路径 ──
-DATE_STR=$(date +%Y%m%d)
-TIME_STR=$(date +%H%M%S)
-STATIC_DIR="$HOME/Documents/openclaw-monitor/static"
-DEPLOY_DIR="$STATIC_DIR/bfe/$DATE_STR/$PLATFORM"
-
-mkdir -p "$DEPLOY_DIR"
-
-# ── 部署 HTML（重命名为 时分秒.html）──
-cp "$SOURCE_HTML" "$DEPLOY_DIR/${TIME_STR}.html"
-echo "DONE: HTML -> $DEPLOY_DIR/${TIME_STR}.html"
-
-# ── 部署资源文件 ──
-if [ -n "$RESOURCE_DIR" ] && [ -d "$SOURCE_PARENT/$RESOURCE_DIR" ]; then
-  rm -rf "$DEPLOY_DIR/$RESOURCE_DIR"
-  cp -r "$SOURCE_PARENT/$RESOURCE_DIR" "$DEPLOY_DIR/$RESOURCE_DIR"
-  echo "DONE: resources -> $DEPLOY_DIR/$RESOURCE_DIR/"
-elif [ -n "$RESOURCE_DIR" ]; then
-  echo "WARN: 资源目录不存在: $SOURCE_PARENT/$RESOURCE_DIR"
-fi
-
-# ── 验证 ──
-sleep 1
-URL_PATH="bfe/$DATE_STR/$PLATFORM/${TIME_STR}.html"
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --noproxy '*' "http://127.0.0.1:9001/$URL_PATH" 2>/dev/null || echo "000")
-if [ "$HTTP_CODE" = "200" ]; then
-  echo "VERIFY: OK (HTTP 200)"
-else
-  echo "VERIFY: HTTP $HTTP_CODE — monitor 可能需要重启"
-fi
-
+# ── 执行部署 ──
+URL_PATH=$("$DEPLOY_SCRIPT" "$SOURCE_HTML" "$PLATFORM" "$RESOURCE_DIR")
 echo ""
-echo "访问地址: http://127.0.0.1:9001/$URL_PATH"
+echo "本地访问: http://127.0.0.1:9001/$URL_PATH"
+echo "公网访问: https://claw.bfelab.com/bfe/$(echo "$URL_PATH" | sed 's|^bfe/||')"
 echo "ALL DONE"
 ```
 
@@ -92,3 +63,25 @@ echo "ALL DONE"
 - 本地访问：http://127.0.0.1:9001/bfe/{YYYYMMDD}/{PLATFORM}/{HHMMSS}.html
 - 公网访问：https://claw.bfelab.com/bfe/{YYYYMMDD}/{PLATFORM}/{HHMMSS}.html
 - 文件位置：~/Documents/openclaw-monitor/static/bfe/{YYYYMMDD}/{PLATFORM}/
+
+---
+
+## 被其他 Skill 调用
+
+其他 skill 无需解析本文件，直接在自己的脚本中调用 `deploy-static.sh`：
+
+```bash
+# 用法: deploy-static.sh <源HTML路径> <平台> [资源文件夹名]
+DEPLOY_SCRIPT="$HOME/Documents/openclaw-monitor/deploy-static.sh"
+
+# 部署并捕获访问路径（脚本最后一行 stdout 输出路径）
+URL_PATH=$("$DEPLOY_SCRIPT" "/tmp/report.html" "youzan" "report_files")
+
+echo "访问地址: http://127.0.0.1:9001/$URL_PATH"
+```
+
+脚本说明：
+- 参数 1（必填）：源 HTML 文件绝对路径
+- 参数 2（必填）：平台名称
+- 参数 3（可选）：资源文件夹名称（与 HTML 同目录下）
+- stdout 最后一行输出部署后的 URL 路径，日志输出到 stderr
