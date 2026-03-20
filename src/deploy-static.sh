@@ -28,7 +28,7 @@ SOURCE_PARENT="$(dirname "$SOURCE_HTML")"
 DATE_STR=$(date +%Y%m%d)
 TIME_STR=$(date +%H%M%S)
 STATIC_DIR="$HOME/Documents/openclaw-monitor/static"
-DEPLOY_DIR="$STATIC_DIR/bfe/$DATE_STR/$PLATFORM"
+DEPLOY_DIR="$STATIC_DIR/$DATE_STR/$PLATFORM"
 
 mkdir -p "$DEPLOY_DIR"
 
@@ -49,5 +49,5 @@ for RES_DIR in "${RESOURCE_DIRS[@]}"; do
 done
 
 # 最后一行输出访问路径（stdout），供调用方捕获
-URL_PATH="bfe/$DATE_STR/$PLATFORM/${TIME_STR}.html"
+URL_PATH="$DATE_STR/$PLATFORM/${TIME_STR}.html"
 echo "$URL_PATH"

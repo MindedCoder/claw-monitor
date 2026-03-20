@@ -30,8 +30,8 @@ metadata:
 ### 部署路径规则
 
 ```
-/bfe/{YYYYMMDD}/{PLATFORM}/{HHMMSS}.html      ← HTML（重命名）
-/bfe/{YYYYMMDD}/{PLATFORM}/{RESOURCE_DIR}/     ← 资源文件（原名保留）
+/{YYYYMMDD}/{PLATFORM}/{HHMMSS}.html      ← HTML（重命名）
+/{YYYYMMDD}/{PLATFORM}/{RESOURCE_DIR}/     ← 资源文件（原名保留）
 ```
 
 ### 执行以下脚本
@@ -55,14 +55,14 @@ fi
 URL_PATH=$("$DEPLOY_SCRIPT" "$SOURCE_HTML" "$PLATFORM" $RESOURCE_DIRS)
 echo ""
 echo "本地访问: http://127.0.0.1:9001/$URL_PATH"
-echo "公网访问: https://claw.bfelab.com/bfe/$(echo "$URL_PATH" | sed 's|^bfe/||')"
+echo "公网访问: https://claw.bfelab.com/bfe/$URL_PATH"
 echo "ALL DONE"
 ```
 
 执行完成后回复用户：
-- 本地访问：http://127.0.0.1:9001/bfe/{YYYYMMDD}/{PLATFORM}/{HHMMSS}.html
-- 公网访问：https://claw.bfelab.com/bfe/{YYYYMMDD}/{PLATFORM}/{HHMMSS}.html
-- 文件位置：~/Documents/openclaw-monitor/static/bfe/{YYYYMMDD}/{PLATFORM}/
+- 本地访问：http://127.0.0.1:9001/{YYYYMMDD}/{PLATFORM}/{HHMMSS}.html
+- 公网访问：https://claw.bfelab.com/{YYYYMMDD}/{PLATFORM}/{HHMMSS}.html
+- 文件位置：~/Documents/openclaw-monitor/static/{YYYYMMDD}/{PLATFORM}/
 
 ---
 
