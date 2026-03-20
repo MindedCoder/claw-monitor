@@ -514,6 +514,9 @@ function renderDashboard(config) {
   const cost = state.model.totalCost > 0 ? '$' + state.model.totalCost.toFixed(4) : '-';
   const estBadge = state.model.estimated ? '<span class="est">(预估)</span>' : '';
 
+  // Feishu 是否有数据
+  const hasFeishu = state.feishuChat.totalMessages > 0 || state.feishuChat.uniqueUsers.size > 0;
+
   // Sessions
   const sessionMap = new Map();
   for (const m of state.feishuChat.recentMessages) {
