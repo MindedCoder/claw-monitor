@@ -29,6 +29,11 @@ EOF
   echo "✅ TOOLS.md 已注册 claw-monitor"
 fi
 
+# 3. 下载 static-deploy skill
+mkdir -p "$SKILLS_BASE/static-deploy"
+curl -fsSL "$REPO_RAW/static-deploy/SKILL.md" -o "$SKILLS_BASE/static-deploy/SKILL.md"
+echo "✅ static-deploy skill 已安装"
+
 if ! grep -q "feishu-notify" "$TOOLS_MD" 2>/dev/null; then
   cat >> "$TOOLS_MD" << 'EOF'
 
@@ -39,4 +44,14 @@ EOF
   echo "✅ TOOLS.md 已注册 feishu-notify"
 fi
 
-echo "✅ 全部安装完成，对话中说「启动监控」或「部署飞书通知」即可"
+if ! grep -q "static-deploy" "$TOOLS_MD" 2>/dev/null; then
+  cat >> "$TOOLS_MD" << 'EOF'
+
+### static-deploy
+将静态 HTML 文件部署到监控面板，通过监控地址访问。
+当用户说「部署页面」「发布HTML」「deploy static」「把文件挂到监控上」时，读取 `skills/static-deploy/SKILL.md` 并按其中的步骤用 exec 工具依次执行。
+EOF
+  echo "✅ TOOLS.md 已注册 static-deploy"
+fi
+
+echo "✅ 全部安装完成，对话中说「启动监控」「部署飞书通知」或「部署页面」即可"

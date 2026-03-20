@@ -3,6 +3,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { URL } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.INFRA_DATA_DIR || __dirname;
@@ -713,6 +714,30 @@ function startWebServer(config) {
       res.end(inner);
       return;
     }
+    // ── 静态文件服务 ──
+    // 从 static/ 目录提供文件，如 /youzan/data.html -> static/youzan/data.html
+    const STATIC_DIR = path.join(DATA_DIR, 'static');
+    const parsed = new URL(req.url, 'http://localhost');
+    const safePath = path.normalize(parsed.pathname).replace(/^(\.\.[/\\])+/, '');
+    const filePath = path.join(STATIC_DIR, safePath);
+
+    // 防止路径穿越
+    if (filePath.startsWith(STATIC_DIR) && fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+      const ext = path.extname(filePath).toLowerCase();
+      const MIME = {
+        '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8',
+        '.css': 'text/css', '.js': 'application/javascript',
+        '.json': 'application/json', '.png': 'image/png',
+        '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+        '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
+        '.pdf': 'application/pdf', '.csv': 'text/csv',
+      };
+      res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+      fs.createReadStream(filePath).pipe(res);
+      return;
+    }
+
+    // 默认：监控面板
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(renderDashboard(config));
   }).listen(WEB_PORT, () => {
