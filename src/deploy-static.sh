@@ -1,7 +1,7 @@
 #!/bin/bash
 # 部署静态 HTML 及资源到监控面板
-# 用法: deploy-static.sh <源HTML路径> <平台> [资源文件夹名]
-# 示例: deploy-static.sh ~/Downloads/hn.html hn hn_files
+# 用法: deploy-static.sh <源HTML路径> <平台> [资源文件夹1] [资源文件夹2] ...
+# 示例: deploy-static.sh ~/Downloads/hn.html hn hn_files images css
 #
 # 部署路径: /bfe/{YYYYMMDD}/{平台}/{HHMMSS}.html
 # 输出最后一行为访问路径，供调用方捕获
@@ -10,10 +10,11 @@ set -e
 
 SOURCE_HTML="$1"
 PLATFORM="$2"
-RESOURCE_DIR="$3"
+shift 2 2>/dev/null || true
+RESOURCE_DIRS=("$@")
 
 if [ -z "$SOURCE_HTML" ] || [ -z "$PLATFORM" ]; then
-  echo "用法: deploy-static.sh <源HTML路径> <平台> [资源文件夹名]" >&2
+  echo "用法: deploy-static.sh <源HTML路径> <平台> [资源文件夹1] [资源文件夹2] ..." >&2
   exit 1
 fi
 
@@ -35,14 +36,17 @@ mkdir -p "$DEPLOY_DIR"
 cp "$SOURCE_HTML" "$DEPLOY_DIR/${TIME_STR}.html"
 echo "HTML -> $DEPLOY_DIR/${TIME_STR}.html" >&2
 
-# 部署资源文件
-if [ -n "$RESOURCE_DIR" ] && [ -d "$SOURCE_PARENT/$RESOURCE_DIR" ]; then
-  rm -rf "$DEPLOY_DIR/$RESOURCE_DIR"
-  cp -r "$SOURCE_PARENT/$RESOURCE_DIR" "$DEPLOY_DIR/$RESOURCE_DIR"
-  echo "Resources -> $DEPLOY_DIR/$RESOURCE_DIR/" >&2
-elif [ -n "$RESOURCE_DIR" ]; then
-  echo "WARN: 资源目录不存在: $SOURCE_PARENT/$RESOURCE_DIR" >&2
-fi
+# 部署所有资源文件夹
+for RES_DIR in "${RESOURCE_DIRS[@]}"; do
+  [ -z "$RES_DIR" ] && continue
+  if [ -d "$SOURCE_PARENT/$RES_DIR" ]; then
+    rm -rf "$DEPLOY_DIR/$RES_DIR"
+    cp -r "$SOURCE_PARENT/$RES_DIR" "$DEPLOY_DIR/$RES_DIR"
+    echo "Resources -> $DEPLOY_DIR/$RES_DIR/" >&2
+  else
+    echo "WARN: 资源目录不存在: $SOURCE_PARENT/$RES_DIR" >&2
+  fi
+done
 
 # 最后一行输出访问路径（stdout），供调用方捕获
 URL_PATH="bfe/$DATE_STR/$PLATFORM/${TIME_STR}.html"
