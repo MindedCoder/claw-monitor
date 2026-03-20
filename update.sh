@@ -26,32 +26,39 @@ for skill_dir in /tmp/claw-monitor-tmp/skills/*/; do
   echo "  ✅ skill/$skill_name"
 done
 
+# 4. 更新 keepalive 保活脚本
+if [ -f /tmp/claw-monitor-tmp/src/keepalive.sh ]; then
+  cp /tmp/claw-monitor-tmp/src/keepalive.sh ~/Documents/openclaw-monitor/keepalive.sh
+  chmod +x ~/Documents/openclaw-monitor/keepalive.sh
+  echo "  ✅ keepalive.sh"
+fi
+
 rm -rf /tmp/claw-monitor-tmp
 
-# 4. 重启服务
-OS_TYPE=$(uname -s)
-if [ "$OS_TYPE" = "Darwin" ]; then
-  pkill -f "node.*monitor.js" 2>/dev/null || true
-  pkill -f "frpc.*frpc.toml" 2>/dev/null || true
-  sleep 1
-  PLIST_MON="$HOME/Library/LaunchAgents/com.openclaw.monitor.plist"
-  PLIST_FRP="$HOME/Library/LaunchAgents/com.openclaw.frpc.plist"
-  if [ -f "$PLIST_MON" ]; then
-    launchctl bootout gui/$(id -u) "$PLIST_MON" 2>/dev/null || true
-    sleep 1
-    launchctl bootstrap gui/$(id -u) "$PLIST_MON"
-    echo "  ✅ monitor 服务已重启"
-    sleep 3
-  fi
-  if [ -f "$PLIST_FRP" ]; then
-    launchctl bootout gui/$(id -u) "$PLIST_FRP" 2>/dev/null || true
-    sleep 1
-    launchctl bootstrap gui/$(id -u) "$PLIST_FRP"
-    echo "  ✅ frpc 服务已重启"
-  fi
-else
-  systemctl --user restart openclaw-monitor.service 2>/dev/null && echo "  ✅ monitor 服务已重启" || true
-  systemctl --user restart openclaw-frpc.service 2>/dev/null && echo "  ✅ frpc 服务已重启" || true
+# 5. 清理旧的 launchd 服务（如有）
+if [ "$(uname -s)" = "Darwin" ]; then
+  launchctl bootout gui/$(id -u) "$HOME/Library/LaunchAgents/com.openclaw.monitor.plist" 2>/dev/null || true
+  launchctl bootout gui/$(id -u) "$HOME/Library/LaunchAgents/com.openclaw.frpc.plist" 2>/dev/null || true
+  rm -f "$HOME/Library/LaunchAgents/com.openclaw.monitor.plist" "$HOME/Library/LaunchAgents/com.openclaw.frpc.plist"
 fi
+
+# 6. 注册 cron 保活（如果还没有）
+if ! crontab -l 2>/dev/null | grep -q "keepalive.sh"; then
+  (crontab -l 2>/dev/null; echo "* * * * * /bin/bash $HOME/Documents/openclaw-monitor/keepalive.sh") | crontab -
+  echo "  ✅ cron 保活已注册"
+fi
+
+# 7. 重启服务
+pkill -f "node.*monitor.js" 2>/dev/null || true
+pkill -f "frpc.*frpc.toml" 2>/dev/null || true
+sleep 1
+cd ~/Documents/openclaw-monitor
+NODE_BIN=$(command -v node)
+nohup "$NODE_BIN" monitor.js > monitor.log 2> monitor.err.log &
+echo "  ✅ monitor 已重启"
+sleep 3
+FRPC_BIN=$(command -v frpc 2>/dev/null || echo "$HOME/bin/frpc")
+nohup "$FRPC_BIN" -c ~/Documents/openclaw-monitor/frpc.toml >> frpc.log 2>&1 &
+echo "  ✅ frpc 已重启"
 
 echo "🎉 更新完成"
