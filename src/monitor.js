@@ -363,7 +363,8 @@ async function chatProbe(config) {
         model,
         messages: [{ role: 'user', content: testMessage }],
         max_tokens: 50,
-        stream: false
+        stream: false,
+        thinking: { type: 'disabled' }
       }),
       signal: controller.signal
     });
