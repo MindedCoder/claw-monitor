@@ -825,13 +825,7 @@ function startWebServer(config) {
 async function main() {
   const config = loadConfig();
 
-  // 从 openclaw.json 读取 monitor 配置，作为唯一配置入口
-  try {
-    const oc = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG, 'utf8'));
-    const mon = oc.monitor || {};
-    if (mon.instanceName) config.instanceName = mon.instanceName;
-    if (mon.frpc) config.frpc = { ...config.frpc, ...mon.frpc };
-  } catch {}
+  // instanceName 直接从 config.json 读取，不再依赖 openclaw.json
 
   log(`[START] Monitoring ${config.healthUrl} every ${config.checkIntervalMs / 1000}s (instance=${config.instanceName || 'default'})`);
   generateFrpcToml(config);

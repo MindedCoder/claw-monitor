@@ -9,9 +9,15 @@ echo "📡 正在更新 claw-monitor..."
 rm -rf /tmp/claw-monitor-tmp
 git clone --depth 1 https://github.com/MindedCoder/claw-monitor.git /tmp/claw-monitor-tmp 2>/dev/null
 
-# 2. 更新 monitor.js + deploy-static.sh
+# 2. 更新 monitor.js + deploy-static.sh（不覆盖 config.json）
 cp /tmp/claw-monitor-tmp/src/monitor.js ~/Documents/openclaw-monitor/monitor.js
 echo "  ✅ monitor.js"
+if [ ! -f ~/Documents/openclaw-monitor/config.json ]; then
+  cp /tmp/claw-monitor-tmp/src/config.json ~/Documents/openclaw-monitor/config.json
+  echo "  ✅ config.json（新建）"
+else
+  echo "  ⏭️  config.json（已存在，跳过）"
+fi
 if [ -f /tmp/claw-monitor-tmp/src/deploy-static.sh ]; then
   cp /tmp/claw-monitor-tmp/src/deploy-static.sh ~/Documents/openclaw-monitor/deploy-static.sh
   chmod +x ~/Documents/openclaw-monitor/deploy-static.sh
