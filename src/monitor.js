@@ -757,6 +757,7 @@ function startWebServer(config) {
 
   http.createServer((req, res) => {
     // Strip basePath prefix for routing
+    log(`[WEB] raw req.url=${req.url} basePath=${basePath}`);
     let urlPath = req.url;
     if (basePath && urlPath.startsWith(basePath)) {
       urlPath = urlPath.slice(basePath.length) || '/';
