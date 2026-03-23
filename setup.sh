@@ -1,57 +1,117 @@
 #!/bin/bash
-# 帮用户装 OpenClaw 时一并执行，把两个 skill 部署好
-# 用法：在装完 openclaw 后运行一次即可
+# OpenClaw Skill Pack 安装器
+#
+# 用法 1（远程）: curl -fsSL https://raw.githubusercontent.com/MindedCoder/claw-monitor/main/setup.sh | bash
+# 用法 2（本地）: cd claw-monitor && bash setup.sh
+# 用法 3（AI 对话中）: 用户说「帮我安装 https://github.com/MindedCoder/claw-monitor」
+#
+# 环境变量（AI 在调用前设置）:
+#   INSTANCE_NAME  — 实例名称，用于公网访问路径
+#
+# 工作原理：
+#   1. 如果不在仓库目录里，先 clone 到临时目录
+#   2. 读取 manifest.json 获取 skill 列表
+#   3. 将所有 skills 复制到 ~/.openclaw/workspace/skills/
+#   4. 在 TOOLS.md 注册触发词
+set -e
 
 SKILLS_BASE="$HOME/.openclaw/workspace/skills"
 TOOLS_MD="$HOME/.openclaw/workspace/TOOLS.md"
-REPO_RAW="https://raw.githubusercontent.com/MindedCoder/claw-monitor/main/skills"
 
-# 1. 下载 claw-monitor skill
-mkdir -p "$SKILLS_BASE/claw-monitor"
-curl -fsSL "$REPO_RAW/claw-monitor/SKILL.md" -o "$SKILLS_BASE/claw-monitor/SKILL.md"
-echo "✅ claw-monitor skill 已安装"
-
-# 2. 下载 feishu-notify skill
-mkdir -p "$SKILLS_BASE/feishu-notify"
-curl -fsSL "$REPO_RAW/feishu-notify/SKILL.md" -o "$SKILLS_BASE/feishu-notify/SKILL.md"
-echo "✅ feishu-notify skill 已安装"
-
-# 3. 在 TOOLS.md 中注册 skill（如果还没有）
-if ! grep -q "claw-monitor" "$TOOLS_MD" 2>/dev/null; then
-  cat >> "$TOOLS_MD" << 'EOF'
-
-## 可用 Skills
-
-### claw-monitor
-一键部署监控面板 + frpc 公网隧道。
-当用户说「启动监控」「部署监控」「start monitor」时，读取 `skills/claw-monitor/SKILL.md` 并按其中的步骤用 exec 工具依次执行。
-EOF
-  echo "✅ TOOLS.md 已注册 claw-monitor"
+# ── 0. 确定源码目录 ──
+if [ -f "./manifest.json" ]; then
+  REPO_DIR="$(pwd)"
+  NEED_CLEANUP=false
+else
+  REPO_DIR=$(mktemp -d)
+  NEED_CLEANUP=true
+  echo "📥 正在下载 claw-monitor..."
+  git clone --depth 1 https://github.com/MindedCoder/claw-monitor.git "$REPO_DIR" 2>/dev/null
 fi
 
-# 3. 下载 static-deploy skill
-mkdir -p "$SKILLS_BASE/static-deploy"
-curl -fsSL "$REPO_RAW/static-deploy/SKILL.md" -o "$SKILLS_BASE/static-deploy/SKILL.md"
-echo "✅ static-deploy skill 已安装"
-
-if ! grep -q "feishu-notify" "$TOOLS_MD" 2>/dev/null; then
-  cat >> "$TOOLS_MD" << 'EOF'
-
-### feishu-notify
-部署飞书「处理中」通知 Hook：收到消息自动发送等待提示，AI 回复后自动撤回。
-当用户说「部署飞书通知」「启动消息回复hook」「deploy feishu notify」时，读取 `skills/feishu-notify/SKILL.md` 并按其中的步骤用 exec 工具依次执行。
-EOF
-  echo "✅ TOOLS.md 已注册 feishu-notify"
+# ── 1. 读取 manifest.json ──
+if [ ! -f "$REPO_DIR/manifest.json" ]; then
+  echo "ERROR: manifest.json not found"
+  [ "$NEED_CLEANUP" = true ] && rm -rf "$REPO_DIR"
+  exit 1
 fi
 
-if ! grep -q "static-deploy" "$TOOLS_MD" 2>/dev/null; then
-  cat >> "$TOOLS_MD" << 'EOF'
+PACK_NAME=$(python3 -c "import json;print(json.load(open('$REPO_DIR/manifest.json'))['name'])")
+echo "📦 安装 skill pack: $PACK_NAME"
 
-### static-deploy
-将静态 HTML 文件部署到监控面板，通过监控地址访问。
-当用户说「部署页面」「发布HTML」「deploy static」「把文件挂到监控上」时，读取 `skills/static-deploy/SKILL.md` 并按其中的步骤用 exec 工具依次执行。
-EOF
-  echo "✅ TOOLS.md 已注册 static-deploy"
-fi
+# ── 2. 复制所有 skills（保留完整目录结构）──
+for skill_dir in "$REPO_DIR"/skills/*/; do
+  [ ! -d "$skill_dir" ] && continue
+  skill_name=$(basename "$skill_dir")
+  target_dir="$SKILLS_BASE/$skill_name"
+  mkdir -p "$target_dir"
+  cp -r "$skill_dir"* "$target_dir/" 2>/dev/null
+  # 确保脚本可执行
+  find "$target_dir" -name "*.sh" -exec chmod +x {} \; 2>/dev/null
+  echo "  ✅ $skill_name"
+done
 
-echo "✅ 全部安装完成，对话中说「启动监控」「部署飞书通知」或「部署页面」即可"
+# ── 3. 在 TOOLS.md 注册 skills ──
+touch "$TOOLS_MD"
+
+# 从 manifest.json 读取 skill 信息并注册
+python3 -c "
+import json, sys
+
+manifest = json.load(open('$REPO_DIR/manifest.json'))
+tools_md_path = '$TOOLS_MD'
+
+with open(tools_md_path, 'r') as f:
+    content = f.read()
+
+entries = []
+for skill in manifest.get('skills', []):
+    name = skill['name']
+    if name in content:
+        print(f'  ⏭️  {name}（已注册）')
+        continue
+    desc = skill['description']
+    trigger = skill['trigger']
+    entries.append(f'''
+### {name}
+{desc}
+当用户说「{trigger}」时，读取 \`skills/{name}/SKILL.md\` 并按其中的步骤用 exec 工具依次执行。
+''')
+    print(f'  ✅ TOOLS.md 已注册 {name}')
+
+if entries:
+    with open(tools_md_path, 'a') as f:
+        if '## 可用 Skills' not in content:
+            f.write('\n## 可用 Skills\n')
+        for entry in entries:
+            f.write(entry)
+"
+
+# ── 4. 执行 postInstall 脚本（从 manifest.json 读取）──
+echo ""
+echo "🚀 正在执行安装后脚本..."
+python3 -c "
+import json
+manifest = json.load(open('$REPO_DIR/manifest.json'))
+for cmd in manifest.get('postInstall', []):
+    print(cmd)
+" 2>/dev/null | while read -r cmd; do
+  # 将路径中的 skills/ 映射到已安装目录
+  resolved_cmd=$(echo "$cmd" | sed "s|skills/|$SKILLS_BASE/|g")
+  echo "  🚀 $cmd"
+  # 透传环境变量给 postInstall 脚本
+  INSTANCE_NAME="${INSTANCE_NAME:-}" bash -c "$resolved_cmd" || echo "  ⚠️  $cmd 执行失败（非致命）"
+done
+
+# ── 5. 清理 ──
+[ "$NEED_CLEANUP" = true ] && rm -rf "$REPO_DIR"
+
+# ── 6. 打印结果 ──
+echo ""
+echo "🎉 安装完成！可用 skills："
+for skill_dir in "$SKILLS_BASE"/*/; do
+  [ -f "$skill_dir/SKILL.md" ] || continue
+  echo "  • $(basename "$skill_dir")"
+done
+echo ""
+echo "在对话中说出触发词即可使用，详见 TOOLS.md"

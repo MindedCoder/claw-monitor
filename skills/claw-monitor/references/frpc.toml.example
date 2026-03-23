@@ -1,0 +1,9 @@
+serverAddr = "8.135.54.217"
+serverPort = 7000
+
+[[proxies]]
+name = "monitor"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 9001
+remotePort = 19090

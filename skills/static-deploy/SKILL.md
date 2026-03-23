@@ -11,6 +11,17 @@ metadata:
 
 用户说「部署页面」「发布 HTML」「deploy static」「把 xxx.html 挂到监控上」等类似意图时触发本 skill。
 
+## 目录结构
+
+```
+static-deploy/
+├── SKILL.md                       ← 本文件
+├── scripts/
+│   └── deploy-static.sh           ← 部署脚本（HTML + 资源文件夹）
+└── references/
+    └── usage.md                   ← 使用参考与调用示例
+```
+
 ## 规则
 
 1. 读完本文件后，先确认用户提供了以下三个参数，缺少则询问
@@ -47,7 +58,7 @@ RESOURCE_DIRS="__RESOURCE_DIR1__ __RESOURCE_DIR2__"
 # ── 确保 deploy-static.sh 存在 ──
 DEPLOY_SCRIPT="$HOME/Documents/openclaw-monitor/deploy-static.sh"
 if [ ! -f "$DEPLOY_SCRIPT" ]; then
-  curl -fsSL "https://raw.githubusercontent.com/MindedCoder/claw-monitor/main/src/deploy-static.sh" -o "$DEPLOY_SCRIPT"
+  curl -fsSL "https://raw.githubusercontent.com/MindedCoder/claw-monitor/main/skills/static-deploy/scripts/deploy-static.sh" -o "$DEPLOY_SCRIPT"
   chmod +x "$DEPLOY_SCRIPT"
 fi
 

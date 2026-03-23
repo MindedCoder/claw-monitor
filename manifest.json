@@ -1,0 +1,35 @@
+{
+  "type": "openclaw-skill-pack",
+  "name": "claw-monitor",
+  "version": "0.2.0",
+  "description": "监控面板 + frpc 隧道 + 静态页面部署 + 飞书通知 Hook",
+  "install": "bash setup.sh",
+  "update": "bash update.sh",
+  "params": {
+    "INSTANCE_NAME": {
+      "description": "实例名称，用于公网访问路径（如 claw.bfelab.com/你的名字）",
+      "required": true,
+      "prompt": "请问你的实例名叫什么？（用于公网访问路径，如 claw.bfelab.com/你的名字）"
+    }
+  },
+  "postInstall": [
+    "bash skills/claw-monitor/scripts/install.sh"
+  ],
+  "skills": [
+    {
+      "name": "claw-monitor",
+      "description": "一键部署监控面板 + frpc 公网隧道",
+      "trigger": "启动监控 / 部署监控 / start monitor / 打开状态窗口"
+    },
+    {
+      "name": "static-deploy",
+      "description": "将静态 HTML 部署到监控面板",
+      "trigger": "部署页面 / 发布 HTML / deploy static"
+    },
+    {
+      "name": "feishu-notify",
+      "description": "飞书「处理中」通知 Hook",
+      "trigger": "部署飞书通知 / deploy feishu notify"
+    }
+  ]
+}

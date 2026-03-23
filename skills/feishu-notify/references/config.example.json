@@ -1,0 +1,7 @@
+{
+  "statusPageUrl": "https://claw.bfelab.com/bfe",
+  "feishu": {
+    "appId": "your-feishu-app-id",
+    "appSecret": "your-feishu-app-secret"
+  }
+}

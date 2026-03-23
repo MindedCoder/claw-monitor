@@ -1,0 +1,28 @@
+{
+  "instanceName": "",
+  "healthUrl": "http://127.0.0.1:18789/health",
+  "openclawProcessName": "openclaw",
+  "checkIntervalMs": 1500,
+  "failThreshold": 3,
+  "workspace": "~/.openclaw",
+  "feishu": {
+    "appId": "",
+    "appSecret": "",
+    "alertOpenId": ""
+  },
+  "chatProbe": {
+    "enabled": true,
+    "intervalMs": 60000,
+    "url": "http://127.0.0.1:18789/v1/chat/completions",
+    "token": "",
+    "model": "openclaw:main",
+    "testMessage": "ping",
+    "timeoutMs": 30000
+  },
+  "pingProbe": {
+    "enabled": true,
+    "intervalMs": 30000,
+    "url": "https://www.google.com",
+    "timeoutMs": 10000
+  }
+}

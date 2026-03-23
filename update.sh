@@ -13,28 +13,32 @@ git clone --depth 1 https://github.com/MindedCoder/claw-monitor.git /tmp/claw-mo
 cp /tmp/claw-monitor-tmp/src/monitor.js ~/Documents/openclaw-monitor/monitor.js
 echo "  ✅ monitor.js"
 if [ ! -f ~/Documents/openclaw-monitor/config.json ]; then
-  cp /tmp/claw-monitor-tmp/src/config.json ~/Documents/openclaw-monitor/config.json
+  cp /tmp/claw-monitor-tmp/skills/claw-monitor/references/config.example.json ~/Documents/openclaw-monitor/config.json
   echo "  ✅ config.json（新建）"
 else
   echo "  ⏭️  config.json（已存在，跳过）"
 fi
-if [ -f /tmp/claw-monitor-tmp/src/deploy-static.sh ]; then
-  cp /tmp/claw-monitor-tmp/src/deploy-static.sh ~/Documents/openclaw-monitor/deploy-static.sh
+if [ -f /tmp/claw-monitor-tmp/skills/static-deploy/scripts/deploy-static.sh ]; then
+  cp /tmp/claw-monitor-tmp/skills/static-deploy/scripts/deploy-static.sh ~/Documents/openclaw-monitor/deploy-static.sh
   chmod +x ~/Documents/openclaw-monitor/deploy-static.sh
   echo "  ✅ deploy-static.sh"
 fi
 
-# 3. 更新所有 skills
+# 3. 更新所有 skills（保留完整目录结构）
 for skill_dir in /tmp/claw-monitor-tmp/skills/*/; do
   skill_name=$(basename "$skill_dir")
-  mkdir -p "$HOME/.openclaw/workspace/skills/$skill_name"
-  cp "$skill_dir"* "$HOME/.openclaw/workspace/skills/$skill_name/" 2>/dev/null
+  target_dir="$HOME/.openclaw/workspace/skills/$skill_name"
+  mkdir -p "$target_dir"
+  # 递归复制整个 skill 目录结构
+  cp -r "$skill_dir"* "$target_dir/" 2>/dev/null
+  # 确保脚本可执行
+  find "$target_dir/scripts" -name "*.sh" -exec chmod +x {} \; 2>/dev/null
   echo "  ✅ skill/$skill_name"
 done
 
 # 4. 更新 keepalive 保活脚本
-if [ -f /tmp/claw-monitor-tmp/src/keepalive.sh ]; then
-  cp /tmp/claw-monitor-tmp/src/keepalive.sh ~/Documents/openclaw-monitor/keepalive.sh
+if [ -f /tmp/claw-monitor-tmp/skills/claw-monitor/scripts/keepalive.sh ]; then
+  cp /tmp/claw-monitor-tmp/skills/claw-monitor/scripts/keepalive.sh ~/Documents/openclaw-monitor/keepalive.sh
   chmod +x ~/Documents/openclaw-monitor/keepalive.sh
   echo "  ✅ keepalive.sh"
 fi

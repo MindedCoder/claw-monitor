@@ -93,7 +93,7 @@ export async function monitorToolHandler(params, { cfg, dataDir, home, pluginDir
       if (pids.monitor && isRunning(pids.monitor)) {
         results.push(`monitor 已在运行 (pid ${pids.monitor})`);
       } else {
-        const monitorScript = path.join(pluginDir, '..', 'src', 'monitor.js');
+        const monitorScript = path.join(pluginDir, 'skills', 'claw-monitor', 'src', 'monitor.js');
         if (!fs.existsSync(monitorScript)) {
           results.push(`错误：找不到 monitor.js，路径: ${monitorScript}`);
         } else {
