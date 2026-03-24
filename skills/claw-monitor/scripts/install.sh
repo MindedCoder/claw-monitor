@@ -154,20 +154,10 @@ if [ "$OS_TYPE" = "Darwin" ]; then
   rm -f "$HOME/Library/LaunchAgents/com.openclaw.monitor.plist" "$HOME/Library/LaunchAgents/com.openclaw.frpc.plist"
 fi
 
-# ── 6. 安装 keepalive 保活脚本 ──
-cp "$SKILL_DIR/scripts/keepalive.sh" "$MONITOR_DIR/keepalive.sh"
-chmod +x "$MONITOR_DIR/keepalive.sh"
-
-# ── 7. 注册 cron 保活（每分钟检查）──
-(crontab -l 2>/dev/null | grep -v "keepalive.sh"; echo "* * * * * /bin/bash $MONITOR_DIR/keepalive.sh") | crontab -
-echo "DONE: cron keepalive installed"
-
-# ── 8. 立即启动 ──
+# ── 6. 启动服务（monitor.js 内置 frpc 管理，无需 crontab）──
 cd "$MONITOR_DIR"
 nohup "$NODE_BIN" monitor.js > monitor.log 2> monitor.err.log &
 sleep 3
-nohup "$FRPC_BIN" -c "$MONITOR_DIR/frpc.toml" >> "$MONITOR_DIR/frpc.log" 2>&1 &
-sleep 2
 
 # ── 9. 验证服务 ──
 INSTANCE=$(python3 -c "import json;c=json.load(open('$HOME/Documents/openclaw-monitor/config.json'));print(c.get('instanceName',''))" 2>/dev/null)

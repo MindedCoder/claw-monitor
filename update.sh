@@ -36,39 +36,23 @@ for skill_dir in /tmp/claw-monitor-tmp/skills/*/; do
   echo "  ✅ skill/$skill_name"
 done
 
-# 4. 更新 keepalive 保活脚本
-if [ -f /tmp/claw-monitor-tmp/skills/claw-monitor/scripts/keepalive.sh ]; then
-  cp /tmp/claw-monitor-tmp/skills/claw-monitor/scripts/keepalive.sh ~/Documents/openclaw-monitor/keepalive.sh
-  chmod +x ~/Documents/openclaw-monitor/keepalive.sh
-  echo "  ✅ keepalive.sh"
-fi
-
 rm -rf /tmp/claw-monitor-tmp
 
-# 5. 清理旧的 launchd 服务（如有）
+# 4. 清理旧的 crontab 和 launchd（如有）
+crontab -l 2>/dev/null | grep -v "keepalive.sh" | crontab - 2>/dev/null
 if [ "$(uname -s)" = "Darwin" ]; then
   launchctl bootout gui/$(id -u) "$HOME/Library/LaunchAgents/com.openclaw.monitor.plist" 2>/dev/null || true
   launchctl bootout gui/$(id -u) "$HOME/Library/LaunchAgents/com.openclaw.frpc.plist" 2>/dev/null || true
   rm -f "$HOME/Library/LaunchAgents/com.openclaw.monitor.plist" "$HOME/Library/LaunchAgents/com.openclaw.frpc.plist"
 fi
 
-# 6. 注册 cron 保活（如果还没有）
-if ! crontab -l 2>/dev/null | grep -q "keepalive.sh"; then
-  (crontab -l 2>/dev/null; echo "* * * * * /bin/bash $HOME/Documents/openclaw-monitor/keepalive.sh") | crontab -
-  echo "  ✅ cron 保活已注册"
-fi
-
-# 7. 重启服务
+# 5. 重启服务（monitor.js 内置 frpc 管理，无需单独启动 frpc）
 pkill -f "node.*monitor.js" 2>/dev/null || true
 pkill -f "frpc.*frpc.toml" 2>/dev/null || true
 sleep 1
 cd ~/Documents/openclaw-monitor
 NODE_BIN=$(command -v node)
 nohup "$NODE_BIN" monitor.js > monitor.log 2> monitor.err.log &
-echo "  ✅ monitor 已重启"
-sleep 3
-FRPC_BIN=$(command -v frpc 2>/dev/null || echo "$HOME/bin/frpc")
-nohup "$FRPC_BIN" -c ~/Documents/openclaw-monitor/frpc.toml >> frpc.log 2>&1 &
-echo "  ✅ frpc 已重启"
+echo "  ✅ monitor 已重启（frpc 由 monitor 内置管理）"
 
 echo "🎉 更新完成"

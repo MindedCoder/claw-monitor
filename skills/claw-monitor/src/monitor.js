@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
-import { execSync } from 'node:child_process';
+import { execSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { URL } from 'node:url';
 
@@ -775,6 +775,51 @@ locations = ["/${name}"]
   log(`[FRPC] Generated frpc.toml: name=${name}, location=/${name}`);
 }
 
+// ══════════════════════════════════════════
+//  frpc 子进程管理（自动重启，取代 crontab）
+// ══════════════════════════════════════════
+let frpcProcess = null;
+
+function startFrpc(config) {
+  const tomlPath = path.join(DATA_DIR, 'frpc.toml');
+  if (!fs.existsSync(tomlPath)) {
+    log('[FRPC] frpc.toml not found, skipping');
+    return;
+  }
+
+  const frpcBin = [
+    path.join(HOME, 'bin', 'frpc'),
+    '/usr/local/bin/frpc',
+    '/usr/bin/frpc'
+  ].find(p => fs.existsSync(p));
+
+  if (!frpcBin) {
+    log('[FRPC] frpc binary not found, skipping');
+    pushSystemLog('warning', 'frpc 未安装，跳过隧道启动');
+    return;
+  }
+
+  function launch() {
+    if (frpcProcess) return;
+    const logFile = path.join(DATA_DIR, 'frpc.log');
+    const out = fs.openSync(logFile, 'a');
+    frpcProcess = spawn(frpcBin, ['-c', tomlPath], {
+      stdio: ['ignore', out, out],
+    });
+    log(`[FRPC] started pid=${frpcProcess.pid}`);
+    pushSystemLog('ok', `frpc 已启动 (pid ${frpcProcess.pid})`);
+
+    frpcProcess.on('exit', (code) => {
+      log(`[FRPC] exited code=${code}, restarting in 5s...`);
+      pushSystemLog('warning', `frpc 退出 (code=${code})，5秒后重启`);
+      frpcProcess = null;
+      setTimeout(launch, 5000);
+    });
+  }
+
+  launch();
+}
+
 function renderWelcomePage(config) {
   const instanceName = config.instanceName || 'default';
   return `<!DOCTYPE html>
@@ -900,6 +945,7 @@ async function main() {
   log(`[START] Monitoring ${config.healthUrl} every ${config.checkIntervalMs / 1000}s (instance=${config.instanceName || 'default'})`);
   generateFrpcToml(config);
   pushSystemLog('ok', '监控服务初始化完成');
+  startFrpc(config);
   startWebServer(config);
   await tick(config);
   setInterval(() => tick(config), config.checkIntervalMs);
