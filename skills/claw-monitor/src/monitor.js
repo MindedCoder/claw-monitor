@@ -751,6 +751,45 @@ locations = ["/${name}"]
   log(`[FRPC] Generated frpc.toml: name=${name}, location=/${name}`);
 }
 
+function renderWelcomePage(config) {
+  const instanceName = config.instanceName || 'default';
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BFE Claw</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#0f172a; color:#e2e8f0; min-height:100vh; display:flex; align-items:center; justify-content:center; }
+  .container { text-align:center; max-width:600px; padding:40px; }
+  .logo { font-size:64px; margin-bottom:24px; }
+  h1 { font-size:36px; font-weight:700; background:linear-gradient(135deg,#60a5fa,#a78bfa); -webkit-background-clip:text; -webkit-text-fill-color:transparent; margin-bottom:12px; }
+  .subtitle { font-size:18px; color:#94a3b8; margin-bottom:40px; }
+  .instance { display:inline-block; background:#1e293b; border:1px solid #334155; border-radius:8px; padding:8px 20px; font-size:14px; color:#cbd5e1; margin-bottom:32px; }
+  .instance span { color:#60a5fa; font-weight:600; }
+  .links { display:flex; gap:16px; justify-content:center; flex-wrap:wrap; }
+  .links a { display:inline-flex; align-items:center; gap:8px; padding:12px 24px; background:#1e293b; border:1px solid #334155; border-radius:8px; color:#e2e8f0; text-decoration:none; font-size:15px; transition:all .2s; }
+  .links a:hover { background:#334155; border-color:#60a5fa; }
+  .footer { margin-top:60px; font-size:13px; color:#475569; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="logo">🦀</div>
+  <h1>Welcome to BFE Claw</h1>
+  <p class="subtitle">AI-Powered Monitoring & Infrastructure</p>
+  <div class="instance">Instance: <span>${instanceName}</span></div>
+  <div class="links">
+    <a href="/bfemonitor">📊 监控面板</a>
+    <a href="/api/status">📡 API Status</a>
+  </div>
+  <p class="footer">Powered by OpenClaw</p>
+</div>
+</body>
+</html>`;
+}
+
 function startWebServer(config) {
   BASE_PATH = config.instanceName ? '/' + config.instanceName : '';
   const basePath = BASE_PATH;
@@ -813,9 +852,23 @@ function startWebServer(config) {
       return;
     }
 
-    // 默认：监控面板
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(renderDashboard(config));
+    // /bfemonitor → 监控面板
+    if (urlPath === '/bfemonitor' || urlPath === '/bfemonitor/') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(renderDashboard(config));
+      return;
+    }
+
+    // 根路径 → 欢迎页
+    if (urlPath === '/' || urlPath === '') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(renderWelcomePage(config));
+      return;
+    }
+
+    // 404
+    res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end('<h1>404 Not Found</h1>');
   }).listen(WEB_PORT, () => {
     log(`[WEB] Dashboard at http://localhost:${WEB_PORT}`);
     pushSystemLog('ok', `监控面板已在端口 ${WEB_PORT} 启动`);
