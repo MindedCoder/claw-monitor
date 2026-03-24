@@ -382,6 +382,7 @@ async function chatProbe(config) {
       const data = await res.json();
       entry.ok = true;
       entry.reply = data.choices?.[0]?.message?.content?.slice(0, 50) || '(empty)';
+      log(`[CHAT-PROBE] response keys: ${Object.keys(data).join(',')} usage=${JSON.stringify(data.usage || null)}`);
       // 读取 API 返回的真实 usage
       if (data.usage) {
         entry.usage = {
