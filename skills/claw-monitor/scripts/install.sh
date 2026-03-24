@@ -68,8 +68,8 @@ fi
 rm -rf /tmp/claw-monitor-tmp
 
 # ── 3. 创建配置 ──
-FEISHU_APP_ID=$(python3 -c "import json;c=json.load(open('$HOME/.openclaw/openclaw.json'));print(c.get('channels',{}).get('feishu',{}).get('appId',''))" 2>/dev/null)
-FEISHU_APP_SECRET=$(python3 -c "import json;c=json.load(open('$HOME/.openclaw/openclaw.json'));print(c.get('channels',{}).get('feishu',{}).get('appSecret',''))" 2>/dev/null)
+FEISHU_APP_ID=$(python3 -c "import json;c=json.load(open('$HOME/.openclaw/openclaw.json'));f=c.get('channels',{}).get('feishu',{});print(f.get('appId') or f.get('accounts',{}).get('main',{}).get('appId','') or f.get('accounts',{}).get('default',{}).get('appId',''))" 2>/dev/null)
+FEISHU_APP_SECRET=$(python3 -c "import json;c=json.load(open('$HOME/.openclaw/openclaw.json'));f=c.get('channels',{}).get('feishu',{});print(f.get('appSecret') or f.get('accounts',{}).get('main',{}).get('appSecret','') or f.get('accounts',{}).get('default',{}).get('appSecret',''))" 2>/dev/null)
 GW_TOKEN=$(python3 -c "import json;c=json.load(open('$HOME/.openclaw/openclaw.json'));print(c.get('gateway',{}).get('auth',{}).get('token',''))" 2>/dev/null)
 
 INSTANCE_NAME="${INSTANCE_NAME:-}"
@@ -78,7 +78,7 @@ cat > ~/Documents/openclaw-monitor/config.json << CONF
   "instanceName": "${INSTANCE_NAME}",
   "healthUrl": "http://127.0.0.1:18789/health",
   "openclawProcessName": "openclaw",
-  "checkIntervalMs": 1500,
+  "checkIntervalMs": 5000,
   "failThreshold": 3,
   "workspace": "$HOME/.openclaw",
   "feishu": {

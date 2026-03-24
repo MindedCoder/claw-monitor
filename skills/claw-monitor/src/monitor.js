@@ -385,10 +385,12 @@ async function chatProbe(config) {
       log(`[CHAT-PROBE] response keys: ${Object.keys(data).join(',')} usage=${JSON.stringify(data.usage || null)}`);
       // 读取 API 返回的真实 usage
       if (data.usage) {
+        const promptTokens = data.usage.prompt_tokens || data.usage.input_tokens || 0;
+        const completionTokens = data.usage.completion_tokens || data.usage.output_tokens || 0;
         entry.usage = {
-          promptTokens: data.usage.prompt_tokens || 0,
-          completionTokens: data.usage.completion_tokens || 0,
-          totalTokens: data.usage.total_tokens || 0
+          promptTokens,
+          completionTokens,
+          totalTokens: promptTokens + completionTokens
         };
       }
     }
@@ -397,11 +399,12 @@ async function chatProbe(config) {
     entry.error = err.name === 'AbortError' ? `timeout (${timeoutMs}ms)` : err.message;
   }
 
-  // 统计 token 消耗（日结 + 总计）
-  const thisTokens = entry.usage?.totalTokens || 0;
+  // 统计 token 消耗（日结 + 总计，仅按输入+输出）
+  const thisTokens = (entry.usage?.promptTokens || 0) + (entry.usage?.completionTokens || 0);
   const today = new Date().toISOString().slice(0, 10);
   if (state.chatProbe.todayDate !== today) {
     state.chatProbe.todayTokens = 0;
+    state.chatProbe.totalTokens = 0;
     state.chatProbe.todayDate = today;
   }
   state.chatProbe.todayTokens += thisTokens;
@@ -409,10 +412,10 @@ async function chatProbe(config) {
 
   pushChatProbe(entry);
   const status = entry.ok ? 'ok' : 'error';
-  const tokenStr = thisTokens > 0 ? ` tokens=${thisTokens}` : '';
+  const tokenStr = thisTokens > 0 ? ` in=${entry.usage?.promptTokens || 0} out=${entry.usage?.completionTokens || 0}` : '';
   const dailyTotal = state.chatProbe.todayTokens > 1000 ? (state.chatProbe.todayTokens / 1000).toFixed(1) + 'k' : state.chatProbe.todayTokens;
   const allTotal = state.chatProbe.totalTokens > 1000 ? (state.chatProbe.totalTokens / 1000).toFixed(1) + 'k' : state.chatProbe.totalTokens;
-  pushSystemLog(status, `Chat 探针: ${entry.ok ? '正常' : '异常'} (${entry.responseMs}ms)${tokenStr} [${dailyTotal}/${allTotal}]${entry.error ? ' — ' + entry.error : ''}`);
+  pushSystemLog(status, `Chat 探针: ${entry.ok ? '正常' : '异常'} (${entry.responseMs}ms)${tokenStr} [today=${dailyTotal} total=${allTotal}]${entry.error ? ' — ' + entry.error : ''}`);
   log(`[CHAT-PROBE] ok=${entry.ok} ${entry.responseMs}ms${tokenStr} today=${dailyTotal} total=${allTotal} ${entry.error || ''}`);
 }
 
@@ -540,7 +543,7 @@ function renderDashboard(config) {
   const estBadge = state.model.estimated ? '<span class="est">(预估)</span>' : '';
 
   // Feishu 是否有数据
-  const hasFeishu = state.feishuChat.totalMessages > 0 || state.feishuChat.uniqueUsers.size > 0;
+  const hasFeishu = !!config?.feishu?.appId || state.feishuChat.totalMessages > 0 || state.feishuChat.uniqueUsers.size > 0;
 
   // Sessions
   const sessionMap = new Map();
@@ -640,7 +643,7 @@ td{padding:4px 8px 4px 0;font-size:12px;border-bottom:1px solid rgba(148,163,184
     <div>
       <p class="eyebrow">监控面板</p>
       <h1>OpenClaw 监控中心</h1>
-      <p class="sub">独立监控 · 实时状态 · 10秒刷新</p>
+      <p class="sub">独立监控 · 实时状态 · 5秒刷新</p>
     </div>
     <div class="badge" style="color:${badgeColor}">${badgeLabel}</div>
   </header>
@@ -653,6 +656,24 @@ td{padding:4px 8px 4px 0;font-size:12px;border-bottom:1px solid rgba(148,163,184
   </div>
 
   <div class="grid">
+    <!-- 探针状态 -->
+    <div class="card full">
+      <div class="card-head">
+        <span class="card-title">探针状态</span>
+        <span class="card-badge" style="background:rgba(56,189,248,.12);color:#38bdf8">靠前展示</span>
+      </div>
+      <div class="stats stats-4">
+        <div class="stat-box"><div class="stat-label">Chat 探针</div><div class="stat-val ${probeChatStatus==='正常'?'green':probeChatStatus==='异常'?'red':'yellow'}">${probeChatStatus}</div></div>
+        <div class="stat-box"><div class="stat-label">Chat 延迟</div><div class="stat-val">${latestChatProbe?.responseMs ? latestChatProbe.responseMs + 'ms' : '-'}</div></div>
+        <div class="stat-box"><div class="stat-label">Chat 合计</div><div class="stat-val cyan">${probeChatTokens}</div></div>
+        <div class="stat-box"><div class="stat-label">Chat 最近</div><div class="stat-val">${latestChatProbe?.time ? toRelative(latestChatProbe.time) : '-'}</div></div>
+        <div class="stat-box"><div class="stat-label">Ping 探针</div><div class="stat-val ${probePingStatus==='正常'?'green':probePingStatus==='异常'?'red':'yellow'}">${probePingStatus}</div></div>
+        <div class="stat-box"><div class="stat-label">Ping 延迟</div><div class="stat-val">${latestPingProbe?.responseMs ? latestPingProbe.responseMs + 'ms' : '-'}</div></div>
+        <div class="stat-box"><div class="stat-label">Chat In/Out</div><div class="stat-val cyan">${probeChatIn}/${probeChatOut}</div></div>
+        <div class="stat-box"><div class="stat-label">Ping 最近</div><div class="stat-val">${latestPingProbe?.time ? toRelative(latestPingProbe.time) : '-'}</div></div>
+      </div>
+    </div>
+
     <!-- 服务状态 -->
     <div class="card">
       <div class="card-head">
@@ -729,7 +750,7 @@ td{padding:4px 8px 4px 0;font-size:12px;border-bottom:1px solid rgba(148,163,184
   </div>
 
   <div class="footer">
-    监控目标: ${esc(config.healthUrl)} · 间隔 ${config.checkIntervalMs/1000}秒<br>启动于 ${toBJ(state.startedAt)} · 每1.5秒实时刷新
+    监控目标: ${esc(config.healthUrl)} · 间隔 ${config.checkIntervalMs/1000}秒<br>启动于 ${toBJ(state.startedAt)} · 每5秒实时刷新
   </div>
 </div>
 <script>
