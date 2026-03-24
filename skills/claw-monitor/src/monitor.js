@@ -28,7 +28,7 @@ const state = {
   feishuChat: { totalMessages: 0, recentMessages: [], uniqueUsers: new Set(), lastActivity: null },
   model: { totalTokensIn: 0, totalTokensOut: 0, totalCost: 0, estimated: true },
   system: { logs: [] },
-  chatProbe: { history: [], lastCheck: null },
+  chatProbe: { history: [], lastCheck: null, todayTokens: 0, totalTokens: 0, todayDate: new Date().toISOString().slice(0, 10) },
   pingProbe: { history: [], lastCheck: null },
   startedAt: new Date().toISOString(),
   healthHistory: [],
@@ -342,8 +342,8 @@ async function chatProbe(config) {
 
   const gatewayUrl = probe.url || `http://127.0.0.1:${config.gatewayPort || 18789}/v1/chat/completions`;
   const token = probe.token || '';
-  const model = probe.model || 'openclaw:main';
-  const testMessage = probe.testMessage || 'ping';
+  const model = probe.model || 'gpt-4o-mini';
+  const testMessage = probe.testMessage || 'hi';
   const timeoutMs = probe.timeoutMs || 30000;
 
   const entry = { time: new Date().toISOString(), ok: false, responseMs: null, reply: null, error: null };
@@ -362,9 +362,11 @@ async function chatProbe(config) {
       body: JSON.stringify({
         model,
         messages: [{ role: 'user', content: testMessage }],
-        max_tokens: 50,
+        max_tokens: 10,
         stream: false,
-        thinking: { type: 'disabled' }
+        thinking: { type: 'disabled' },
+        user: 'claw-monitor-probe',
+        conversation_id: probe.sessionId || 'claw-monitor-probe'
       }),
       signal: controller.signal
     });
@@ -379,17 +381,38 @@ async function chatProbe(config) {
     } else {
       const data = await res.json();
       entry.ok = true;
-      entry.reply = data.choices?.[0]?.message?.content?.slice(0, 200) || '(empty)';
+      entry.reply = data.choices?.[0]?.message?.content?.slice(0, 50) || '(empty)';
+      // 读取 API 返回的真实 usage
+      if (data.usage) {
+        entry.usage = {
+          promptTokens: data.usage.prompt_tokens || 0,
+          completionTokens: data.usage.completion_tokens || 0,
+          totalTokens: data.usage.total_tokens || 0
+        };
+      }
     }
   } catch (err) {
     entry.responseMs = Date.now() - start;
     entry.error = err.name === 'AbortError' ? `timeout (${timeoutMs}ms)` : err.message;
   }
 
+  // 统计 token 消耗（日结 + 总计）
+  const thisTokens = entry.usage?.totalTokens || 0;
+  const today = new Date().toISOString().slice(0, 10);
+  if (state.chatProbe.todayDate !== today) {
+    state.chatProbe.todayTokens = 0;
+    state.chatProbe.todayDate = today;
+  }
+  state.chatProbe.todayTokens += thisTokens;
+  state.chatProbe.totalTokens += thisTokens;
+
   pushChatProbe(entry);
   const status = entry.ok ? 'ok' : 'error';
-  pushSystemLog(status, `Chat 探针: ${entry.ok ? '正常' : '异常'} (${entry.responseMs}ms)${entry.error ? ' — ' + entry.error : ''}`);
-  log(`[CHAT-PROBE] ok=${entry.ok} ${entry.responseMs}ms ${entry.error || ''}`);
+  const tokenStr = thisTokens > 0 ? ` tokens=${thisTokens}` : '';
+  const dailyTotal = state.chatProbe.todayTokens > 1000 ? (state.chatProbe.todayTokens / 1000).toFixed(1) + 'k' : state.chatProbe.todayTokens;
+  const allTotal = state.chatProbe.totalTokens > 1000 ? (state.chatProbe.totalTokens / 1000).toFixed(1) + 'k' : state.chatProbe.totalTokens;
+  pushSystemLog(status, `Chat 探针: ${entry.ok ? '正常' : '异常'} (${entry.responseMs}ms)${tokenStr} [${dailyTotal}/${allTotal}]${entry.error ? ' — ' + entry.error : ''}`);
+  log(`[CHAT-PROBE] ok=${entry.ok} ${entry.responseMs}ms${tokenStr} today=${dailyTotal} total=${allTotal} ${entry.error || ''}`);
 }
 
 // ══════════════════════════════════════════

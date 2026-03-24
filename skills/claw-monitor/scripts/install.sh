@@ -44,7 +44,7 @@ rm -rf /tmp/claw-monitor-tmp
 git clone --depth 1 https://github.com/MindedCoder/claw-monitor.git /tmp/claw-monitor-tmp 2>/dev/null || true
 if [ -d /tmp/claw-monitor-tmp ]; then
   # 更新 monitor.js
-  cp /tmp/claw-monitor-tmp/src/monitor.js ~/Documents/openclaw-monitor/monitor.js
+  cp /tmp/claw-monitor-tmp/skills/claw-monitor/src/monitor.js ~/Documents/openclaw-monitor/monitor.js
   echo "UPDATED: monitor.js"
   # 更新 deploy-static.sh
   if [ -f /tmp/claw-monitor-tmp/skills/static-deploy/scripts/deploy-static.sh ]; then
@@ -91,8 +91,8 @@ cat > ~/Documents/openclaw-monitor/config.json << CONF
     "intervalMs": 60000,
     "url": "http://127.0.0.1:18789/v1/chat/completions",
     "token": "${GW_TOKEN}",
-    "model": "openclaw:main",
-    "testMessage": "ping",
+    "model": "gpt-4o-mini",
+    "testMessage": "hi",
     "timeoutMs": 30000
   },
   "pingProbe": {

@@ -10,7 +10,7 @@ rm -rf /tmp/claw-monitor-tmp
 git clone --depth 1 https://github.com/MindedCoder/claw-monitor.git /tmp/claw-monitor-tmp 2>/dev/null
 
 # 2. 更新 monitor.js + deploy-static.sh（不覆盖 config.json）
-cp /tmp/claw-monitor-tmp/src/monitor.js ~/Documents/openclaw-monitor/monitor.js
+cp /tmp/claw-monitor-tmp/skills/claw-monitor/src/monitor.js ~/Documents/openclaw-monitor/monitor.js
 echo "  ✅ monitor.js"
 if [ ! -f ~/Documents/openclaw-monitor/config.json ]; then
   cp /tmp/claw-monitor-tmp/skills/claw-monitor/references/config.example.json ~/Documents/openclaw-monitor/config.json
