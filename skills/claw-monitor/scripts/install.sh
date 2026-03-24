@@ -139,6 +139,47 @@ else:
     print('SKIP: chatCompletions already enabled')
 "
 
+# ── 4.5. 为 OpenClaw chatCompletions 打 usage 补丁（让 claw-monitor 可读到 usage） ──
+python3 - <<'PY'
+from pathlib import Path
+import sys
+
+cand = sorted(Path('/opt/homebrew/lib/node_modules/openclaw/dist').glob('gateway-cli-*.js'))
+if not cand:
+    print('WARN: gateway-cli dist not found, skip usage patch')
+    raise SystemExit(0)
+p = cand[-1]
+text = p.read_text(errors='replace')
+changed = False
+
+old1 = '''\tif (!stream) {\n\t\ttry {\n\t\t\tconst content = resolveAgentResponseText(await agentCommandFromIngress(commandInput, defaultRuntime, deps));\n\t\t\tsendJson$1(res, 200, {\n\t\t\t\tid: runId,\n\t\t\t\tobject: "chat.completion",\n\t\t\t\tcreated: Math.floor(Date.now() / 1e3),\n\t\t\t\tmodel,\n\t\t\t\tchoices: [{\n\t\t\t\t\tindex: 0,\n\t\t\t\t\tmessage: {\n\t\t\t\t\t\trole: "assistant",\n\t\t\t\t\t\tcontent\n\t\t\t\t\t},\n\t\t\t\t\tfinish_reason: "stop"\n\t\t\t\t}],\n\t\t\t\tusage: {\n\t\t\t\t\tprompt_tokens: 0,\n\t\t\t\t\tcompletion_tokens: 0,\n\t\t\t\t\ttotal_tokens: 0\n\t\t\t\t}\n\t\t\t});\n\t\t} catch (err) {'''
+new1 = '''\tif (!stream) {\n\t\ttry {\n\t\t\tconst result = await agentCommandFromIngress(commandInput, defaultRuntime, deps);\n\t\t\tconst content = resolveAgentResponseText(result);\n\t\t\tconst usage = extractUsageFromResult(result);\n\t\t\tsendJson$1(res, 200, {\n\t\t\t\tid: runId,\n\t\t\t\tobject: "chat.completion",\n\t\t\t\tcreated: Math.floor(Date.now() / 1e3),\n\t\t\t\tmodel,\n\t\t\t\tchoices: [{\n\t\t\t\t\tindex: 0,\n\t\t\t\t\tmessage: {\n\t\t\t\t\t\trole: "assistant",\n\t\t\t\t\t\tcontent\n\t\t\t\t\t},\n\t\t\t\t\tfinish_reason: "stop"\n\t\t\t\t}],\n\t\t\t\tusage\n\t\t\t});\n\t\t} catch (err) {'''
+if old1 in text:
+    text = text.replace(old1, new1, 1)
+    changed = True
+
+old2 = '''function createEmptyUsage() {\n\treturn {\n\t\tinput_tokens: 0,\n\t\toutput_tokens: 0,\n\t\ttotal_tokens: 0\n\t};\n}'''
+new2 = '''function createEmptyUsage() {\n\treturn {\n\t\tinput_tokens: 0,\n\t\toutput_tokens: 0,\n\t\tprompt_tokens: 0,\n\t\tcompletion_tokens: 0,\n\t\ttotal_tokens: 0\n\t};\n}'''
+if old2 in text:
+    text = text.replace(old2, new2, 1)
+    changed = True
+
+old3 = '''\treturn {\n\t\tinput_tokens: Math.max(0, input),\n\t\toutput_tokens: Math.max(0, output),\n\t\ttotal_tokens: Math.max(0, total)\n\t};'''
+new3 = '''\treturn {\n\t\tinput_tokens: Math.max(0, input),\n\t\toutput_tokens: Math.max(0, output),\n\t\tprompt_tokens: Math.max(0, input),\n\t\tcompletion_tokens: Math.max(0, output),\n\t\ttotal_tokens: Math.max(0, total)\n\t};'''
+if old3 in text:
+    text = text.replace(old3, new3, 1)
+    changed = True
+
+if changed:
+    p.write_text(text)
+    print(f'DONE: OpenClaw usage patch applied to {p}')
+else:
+    if 'extractUsageFromResult(result)' in text and 'prompt_tokens: Math.max(0, input)' in text:
+        print(f'SKIP: OpenClaw usage patch already present in {p}')
+    else:
+        print(f'WARN: OpenClaw usage patch target not found in {p}')
+PY
+
 # ── 5. 清理旧的 launchd 服务（如有）──
 MONITOR_DIR="$HOME/Documents/openclaw-monitor"
 FRPC_BIN="$HOME/bin/frpc"
