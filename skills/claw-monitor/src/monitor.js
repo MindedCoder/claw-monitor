@@ -768,9 +768,6 @@ function renderWelcomePage(config) {
   .subtitle { font-size:18px; color:#94a3b8; margin-bottom:40px; }
   .instance { display:inline-block; background:#1e293b; border:1px solid #334155; border-radius:8px; padding:8px 20px; font-size:14px; color:#cbd5e1; margin-bottom:32px; }
   .instance span { color:#60a5fa; font-weight:600; }
-  .links { display:flex; gap:16px; justify-content:center; flex-wrap:wrap; }
-  .links a { display:inline-flex; align-items:center; gap:8px; padding:12px 24px; background:#1e293b; border:1px solid #334155; border-radius:8px; color:#e2e8f0; text-decoration:none; font-size:15px; transition:all .2s; }
-  .links a:hover { background:#334155; border-color:#60a5fa; }
   .footer { margin-top:60px; font-size:13px; color:#475569; }
 </style>
 </head>
@@ -780,10 +777,6 @@ function renderWelcomePage(config) {
   <h1>Welcome to BFE Claw</h1>
   <p class="subtitle">AI-Powered Monitoring & Infrastructure</p>
   <div class="instance">Instance: <span>${instanceName}</span></div>
-  <div class="links">
-    <a href="/bfemonitor">📊 监控面板</a>
-    <a href="/api/status">📡 API Status</a>
-  </div>
   <p class="footer">Powered by OpenClaw</p>
 </div>
 </body>
