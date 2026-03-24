@@ -108,6 +108,12 @@ cat > ~/Documents/openclaw-monitor/frpc.toml << 'CONF'
 serverAddr = "8.135.54.217"
 serverPort = 7000
 
+# 心跳保活 + 断线自动重连
+transport.heartbeatInterval = 10
+transport.heartbeatTimeout = 30
+transport.protocol = "tcp"
+loginFailExit = false
+
 [[proxies]]
 name = "monitor"
 type = "tcp"

@@ -1,6 +1,14 @@
 serverAddr = "8.135.54.217"
 serverPort = 7000
 
+# 传输层配置
+transport.heartbeatInterval = 10
+transport.heartbeatTimeout = 30
+transport.protocol = "tcp"
+
+# 登录失败自动重试
+loginFailExit = false
+
 [[proxies]]
 name = "monitor"
 type = "tcp"
