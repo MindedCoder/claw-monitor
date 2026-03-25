@@ -1,7 +1,6 @@
 #!/bin/bash
 # 部署静态 HTML 及资源到监控面板
 # 用法: deploy-static.sh <源HTML路径> <平台> [资源文件夹1] [资源文件夹2] ...
-#       deploy-static.sh --last   ← 从 ~/.openclaw-last-build.json 读取上次构建产物
 # 示例: deploy-static.sh ~/Downloads/hn.html hn hn_files images css
 #
 # 部署路径: /{instanceName}/{YYYYMMDD}/{平台}/{HHMMSS}.html
@@ -9,31 +8,13 @@
 
 set -e
 
-MANIFEST="$HOME/.openclaw-last-build.json"
-
-# --last 模式：从 manifest 读取参数
-if [ "$1" = "--last" ]; then
-  if [ ! -f "$MANIFEST" ]; then
-    echo "ERROR: 没有找到上次构建记录 ($MANIFEST)" >&2
-    echo "请先使用生成类 skill 构建页面，或手动指定参数" >&2
-    exit 1
-  fi
-  SOURCE_HTML=$(python3 -c "import json;m=json.load(open('$MANIFEST'));print(m['html'])")
-  PLATFORM=$(python3 -c "import json;m=json.load(open('$MANIFEST'));print(m['platform'])")
-  RESOURCE_DIRS_STR=$(python3 -c "import json;m=json.load(open('$MANIFEST'));print(' '.join(m.get('resourceDirs',[])))")
-  read -ra RESOURCE_DIRS <<< "$RESOURCE_DIRS_STR"
-  echo "从 $MANIFEST 读取构建产物:" >&2
-  echo "  html=$SOURCE_HTML platform=$PLATFORM resources=${RESOURCE_DIRS[*]}" >&2
-else
-  SOURCE_HTML="$1"
-  PLATFORM="$2"
-  shift 2 2>/dev/null || true
-  RESOURCE_DIRS=("$@")
-fi
+SOURCE_HTML="$1"
+PLATFORM="$2"
+shift 2 2>/dev/null || true
+RESOURCE_DIRS=("$@")
 
 if [ -z "$SOURCE_HTML" ] || [ -z "$PLATFORM" ]; then
   echo "用法: deploy-static.sh <源HTML路径> <平台> [资源文件夹1] [资源文件夹2] ..." >&2
-  echo "      deploy-static.sh --last   ← 读取上次构建产物" >&2
   exit 1
 fi
 
