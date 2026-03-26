@@ -30,6 +30,7 @@ const state = {
   system: { logs: [] },
   chatProbe: { history: [], lastCheck: null, todayTokens: 0, totalTokens: 0, todayDate: new Date().toISOString().slice(0, 10) },
   pingProbe: { history: [], lastCheck: null },
+  codexUsage: { lastCheck: null, error: null, limitReached: false, primary: null, secondary: null, email: null, plan: null },
   startedAt: new Date().toISOString(),
   healthHistory: [],
 };
@@ -453,6 +454,67 @@ async function pingProbe(config) {
 }
 
 // ══════════════════════════════════════════
+//  Codex Usage Probe — 查询 Codex 配额使用情况
+// ══════════════════════════════════════════
+const AUTH_PROFILES_PATH = path.join(HOME, '.openclaw', 'agents', 'main', 'agent', 'auth-profiles.json');
+
+function readCodexAccessToken() {
+  try {
+    const data = JSON.parse(fs.readFileSync(AUTH_PROFILES_PATH, 'utf8'));
+    return data?.profiles?.['openai-codex:default']?.access || null;
+  } catch { return null; }
+}
+
+async function codexUsageProbe() {
+  const token = readCodexAccessToken();
+  if (!token) {
+    state.codexUsage.error = 'no token';
+    log('[CODEX-USAGE] openai-codex:default access token not found');
+    return;
+  }
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    const res = await fetch('https://chatgpt.com/backend-api/wham/usage', {
+      headers: { 'Authorization': `Bearer ${token}`, 'User-Agent': 'OpenClaw-Monitor/1.0', 'Accept': 'application/json' },
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    if (!res.ok) {
+      state.codexUsage.error = `HTTP ${res.status}`;
+      log(`[CODEX-USAGE] failed: HTTP ${res.status}`);
+      return;
+    }
+
+    const data = await res.json();
+    const rl = data.rate_limit || {};
+    state.codexUsage = {
+      lastCheck: new Date().toISOString(),
+      error: null,
+      limitReached: rl.limit_reached || false,
+      primary: rl.primary_window ? {
+        usedPercent: rl.primary_window.used_percent,
+        resetAt: new Date(rl.primary_window.reset_at * 1000).toISOString(),
+      } : null,
+      secondary: rl.secondary_window ? {
+        usedPercent: rl.secondary_window.used_percent,
+        resetAt: new Date(rl.secondary_window.reset_at * 1000).toISOString(),
+      } : null,
+      email: data.email || null,
+      plan: data.plan_type || null,
+    };
+    const p = state.codexUsage.primary;
+    const s = state.codexUsage.secondary;
+    log(`[CODEX-USAGE] ok: 5h=${p?.usedPercent ?? '-'}% weekly=${s?.usedPercent ?? '-'}% limitReached=${state.codexUsage.limitReached}`);
+  } catch (err) {
+    state.codexUsage.error = err.name === 'AbortError' ? 'timeout' : err.message;
+    log(`[CODEX-USAGE] error: ${state.codexUsage.error}`);
+  }
+}
+
+// ══════════════════════════════════════════
 //  Feishu Alert
 // ══════════════════════════════════════════
 let feishuTokenCache = { token: null, expiresAt: 0 };
@@ -568,6 +630,16 @@ function renderDashboard(config) {
   const aiStatusColor = state.ai.status === '空闲' ? '#94a3b8' : state.ai.status.includes('思考') ? '#f59e0b' : state.ai.status.includes('回复') ? '#22c55e' : '#38bdf8';
   const aiPulse = state.ai.status !== '空闲' && state.ai.status !== '未知';
 
+  // Codex usage
+  const cx = state.codexUsage;
+  const cxHas = cx.lastCheck && !cx.error;
+  const cxPrimary = cx.primary?.usedPercent ?? '-';
+  const cxSecondary = cx.secondary?.usedPercent ?? '-';
+  const cxPrimaryReset = cx.primary?.resetAt ? toBJ(cx.primary.resetAt) : '-';
+  const cxSecondaryReset = cx.secondary?.resetAt ? toBJ(cx.secondary.resetAt) : '-';
+  const cxBarColor = (pct) => pct >= 90 ? '#ef4444' : pct >= 70 ? '#f59e0b' : '#22c55e';
+  const cxBar = (pct) => typeof pct === 'number' ? `<div style="margin-top:6px;height:6px;border-radius:3px;background:rgba(148,163,184,.15);overflow:hidden"><div style="width:${pct}%;height:100%;border-radius:3px;background:${cxBarColor(pct)}"></div></div>` : '';
+
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -671,6 +743,24 @@ td{padding:4px 8px 4px 0;font-size:12px;border-bottom:1px solid rgba(148,163,184
         <div class="stat-box"><div class="stat-label">Ping 延迟</div><div class="stat-val">${latestPingProbe?.responseMs ? latestPingProbe.responseMs + 'ms' : '-'}</div></div>
         <div class="stat-box"><div class="stat-label">Chat In/Out</div><div class="stat-val cyan">${probeChatIn}/${probeChatOut}</div></div>
         <div class="stat-box"><div class="stat-label">Ping 最近</div><div class="stat-val">${latestPingProbe?.time ? toRelative(latestPingProbe.time) : '-'}</div></div>
+      </div>
+    </div>
+
+    <!-- Codex 配额 -->
+    <div class="card full">
+      <div class="card-head">
+        <span class="card-title">Codex 配额</span>
+        <span class="card-badge" style="background:${cx.limitReached?'rgba(239,68,68,.15);color:#ef4444':'rgba(34,197,94,.15);color:#22c55e'}">${cx.limitReached?'已限额':cxHas?'正常':'未知'}</span>
+      </div>
+      <div class="stats stats-4">
+        <div class="stat-box"><div class="stat-label">5h 已用</div><div class="stat-val ${typeof cxPrimary==='number'?(cxPrimary>=90?'red':cxPrimary>=70?'yellow':'green'):''}">${cxPrimary}%</div>${cxBar(cxPrimary)}</div>
+        <div class="stat-box"><div class="stat-label">5h 重置</div><div class="stat-val">${cxPrimaryReset}</div></div>
+        <div class="stat-box"><div class="stat-label">周已用</div><div class="stat-val ${typeof cxSecondary==='number'?(cxSecondary>=90?'red':cxSecondary>=70?'yellow':'green'):''}">${cxSecondary}%</div>${cxBar(cxSecondary)}</div>
+        <div class="stat-box"><div class="stat-label">周重置</div><div class="stat-val">${cxSecondaryReset}</div></div>
+      </div>
+      <div style="margin-top:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
+        <span class="dim" style="font-size:11px">${cx.email?esc(cx.email):'-'} · ${cx.plan||'-'} · 更新于 ${cx.lastCheck?toRelative(cx.lastCheck):'-'}${cx.error?' · <span style="color:#ef4444">'+esc(cx.error)+'</span>':''}</span>
+        <button onclick="fetch('${BASE_PATH}/api/codex-usage/refresh').then(()=>{})" style="background:rgba(56,189,248,.15);color:#7dd3fc;border:1px solid rgba(56,189,248,.25);border-radius:8px;padding:4px 12px;font-size:11px;cursor:pointer;font-weight:600">刷新配额</button>
       </div>
     </div>
 
@@ -902,6 +992,18 @@ function startWebServer(config) {
       res.end(JSON.stringify({ data: latest }));
       return;
     }
+    if (urlPath === '/api/codex-usage') {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' });
+      res.end(JSON.stringify({ data: state.codexUsage }));
+      return;
+    }
+    if (urlPath === '/api/codex-usage/refresh') {
+      codexUsageProbe().then(() => {
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' });
+        res.end(JSON.stringify({ data: state.codexUsage }));
+      });
+      return;
+    }
     if (urlPath === '/api/html') {
       // Return only the inner content of .app for fast DOM swap
       const full = renderDashboard(config);
@@ -988,6 +1090,12 @@ async function main() {
     pingProbe(config);
     setInterval(() => pingProbe(config), interval);
   }
+
+  // Codex Usage 定时器（5分钟）
+  log('[CODEX-USAGE] enabled, interval 300s');
+  pushSystemLog('ok', 'Codex 配额探针已启动，间隔 300秒');
+  codexUsageProbe();
+  setInterval(() => codexUsageProbe(), 300000);
 }
 
 main();
