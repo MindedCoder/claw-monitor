@@ -157,7 +157,7 @@ function handleCheck(req, res) {
   const session = getSession(cookies[COOKIE_NAME]);
   if (session) {
     res.writeHead(200, {
-      'X-Auth-User': session.user.name || session.user.id || 'anonymous',
+      'X-Auth-User': encodeURIComponent(session.user.name || session.user.id || 'anonymous'),
     });
     res.end('ok');
   } else {
