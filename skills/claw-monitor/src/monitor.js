@@ -626,6 +626,15 @@ function renderDashboard(config) {
   const users = [...state.feishuChat.uniqueUsers];
   const healthLabel = { ok: '正常', down: '宕机', degraded: '异常', unknown: '未知' };
 
+  // Probe stats
+  const latestChatProbe = state.chatProbe.history.length > 0 ? state.chatProbe.history[state.chatProbe.history.length - 1] : null;
+  const latestPingProbe = state.pingProbe.history.length > 0 ? state.pingProbe.history[state.pingProbe.history.length - 1] : null;
+  const probeChatStatus = latestChatProbe ? (latestChatProbe.ok ? '正常' : '异常') : '未知';
+  const probePingStatus = latestPingProbe ? (latestPingProbe.ok ? '正常' : '异常') : '未知';
+  const probeChatTokens = state.chatProbe.totalTokens > 1000 ? (state.chatProbe.totalTokens / 1000).toFixed(1) + 'k' : state.chatProbe.totalTokens;
+  const probeChatIn = latestChatProbe?.usage?.promptTokens ?? '-';
+  const probeChatOut = latestChatProbe?.usage?.completionTokens ?? '-';
+
   // AI status
   const aiStatusColor = state.ai.status === '空闲' ? '#94a3b8' : state.ai.status.includes('思考') ? '#f59e0b' : state.ai.status.includes('回复') ? '#22c55e' : '#38bdf8';
   const aiPulse = state.ai.status !== '空闲' && state.ai.status !== '未知';
