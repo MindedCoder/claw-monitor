@@ -1084,7 +1084,7 @@ async function main() {
 
   // Chat Probe 定时器
   if (config.chatProbe?.enabled) {
-    const interval = config.chatProbe.intervalMs || 1800000;
+    const interval = config.chatProbe.intervalMs || 300000;
     log(`[CHAT-PROBE] enabled, interval ${interval / 1000}s`);
     pushSystemLog('ok', `Chat 探针已启动，间隔 ${interval / 1000}秒`);
     chatProbe(config);
