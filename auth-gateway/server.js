@@ -3,6 +3,7 @@
  *
  * 部署在 frp server 上，配合 nginx auth_request 使用。
  * 支持多种身份提供商（飞书、微信、Telegram、密码），通过配置切换。
+ * 支持多租户：不同路径前缀使用不同的 IdP 配置。
  *
  * 端口默认 4180，与 oauth2-proxy 保持一致方便迁移。
  *
@@ -38,9 +39,9 @@ const SECRET = config.secret || crypto.randomBytes(32).toString('hex');
 // ── Session Store (in-memory, 重启丢失，够用) ───────
 const sessions = new Map();
 
-function createSession(user) {
+function createSession(user, tenant) {
   const id = crypto.randomBytes(24).toString('hex');
-  sessions.set(id, { user, createdAt: Date.now() });
+  sessions.set(id, { user, tenant, createdAt: Date.now() });
   return id;
 }
 
@@ -63,16 +64,59 @@ setInterval(() => {
 }, 60_000);
 
 // ── Provider loader ─────────────────────────────────
+const providerCache = new Map();
+
 async function loadProvider(name) {
+  if (providerCache.has(name)) return providerCache.get(name);
   const providerPath = path.join(__dirname, 'providers', `${name}.js`);
   if (!fs.existsSync(providerPath)) {
     throw new Error(`Provider "${name}" not found at ${providerPath}`);
   }
   const mod = await import(providerPath);
-  return mod.default || mod;
+  const p = mod.default || mod;
+  providerCache.set(name, p);
+  return p;
 }
 
-let provider;
+// ── 多租户：根据路径前缀解析对应的 tenant 配置 ──────
+//
+// config.tenants 示例:
+//   {
+//     "/tenant-a": { "authProvider": "feishu", "provider": { "appId": "aaa", ... } },
+//     "/tenant-b": { "authProvider": "feishu", "provider": { "appId": "bbb", ... } }
+//   }
+//
+// 匹配规则: 请求路径以 tenant key 开头则命中
+// 未命中任何 tenant 时，fallback 到顶层 config.authProvider + config.provider
+//
+
+function resolveTenant(requestPath) {
+  if (config.tenants) {
+    // 按路径长度降序，优先匹配更长的前缀
+    const keys = Object.keys(config.tenants).sort((a, b) => b.length - a.length);
+    for (const prefix of keys) {
+      if (requestPath.startsWith(prefix)) {
+        return { prefix, ...config.tenants[prefix] };
+      }
+    }
+  }
+  // fallback: 顶层配置
+  return {
+    prefix: null,
+    authProvider: config.authProvider || 'password',
+    provider: config.provider,
+  };
+}
+
+// 从请求中推断原始访问路径（用于多租户匹配）
+function getOriginalPath(req, url) {
+  // auth_request 子请求时 nginx 会传 X-Original-URI
+  if (req.headers['x-original-uri']) return req.headers['x-original-uri'];
+  // login/callback 时从 rd 参数恢复
+  const rd = url.searchParams.get('rd');
+  if (rd) return rd;
+  return '/';
+}
 
 // ── Cookie helpers ──────────────────────────────────
 function parseCookies(header) {
@@ -129,23 +173,28 @@ async function handleLogin(req, res) {
   const rd = url.searchParams.get('rd') || '/';
   const state = crypto.randomBytes(16).toString('hex');
 
-  // 把 state -> rd 映射存起来（防 CSRF + 记住跳转目标）
-  sessions.set(`state:${state}`, { rd, createdAt: Date.now() });
+  // 解析租户
+  const tenant = resolveTenant(rd);
+  const providerObj = await loadProvider(tenant.authProvider || 'password');
+  const providerConfig = tenant.provider;
+
+  // 把 state -> rd + tenant 映射存起来（防 CSRF + 记住跳转目标 + 记住租户）
+  sessions.set(`state:${state}`, { rd, tenant, createdAt: Date.now() });
 
   const redirectUri = getRedirectUri(req);
 
-  if (provider.renderLoginPage) {
+  if (providerObj.renderLoginPage) {
     // password / telegram 等不走 OAuth 跳转的 provider
-    const html = provider.renderLoginPage({ state, rd, redirectUri, config: config.provider });
+    const html = providerObj.renderLoginPage({ state, rd, redirectUri, config: providerConfig });
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(html);
     return;
   }
 
-  const authUrl = provider.getAuthUrl({
+  const authUrl = providerObj.getAuthUrl({
     redirectUri,
     state,
-    config: config.provider,
+    config: providerConfig,
   });
 
   res.writeHead(302, { Location: authUrl });
@@ -175,7 +224,7 @@ async function handleCallback(req, res) {
     }
   }
 
-  // 校验 state
+  // 校验 state，同时恢复 tenant 信息
   const stateData = sessions.get(`state:${state}`);
   if (!stateData) {
     res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -184,23 +233,26 @@ async function handleCallback(req, res) {
   }
   sessions.delete(`state:${state}`);
   const rd = stateData.rd || '/';
+  const tenant = stateData.tenant;
+  const providerObj = await loadProvider(tenant.authProvider || 'password');
+  const providerConfig = tenant.provider;
 
   try {
-    const user = await provider.getUser({
+    const user = await providerObj.getUser({
       code,
       redirectUri: getRedirectUri(req),
-      config: config.provider,
+      config: providerConfig,
       body,
     });
 
     // 可选：权限检查
-    if (provider.isAllowed && !provider.isAllowed(user, config.provider)) {
+    if (providerObj.isAllowed && !providerObj.isAllowed(user, providerConfig)) {
       res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end('<h3>无权访问</h3><p>你的账号没有访问权限，请联系管理员。</p>');
       return;
     }
 
-    const sessionId = createSession(user);
+    const sessionId = createSession(user, tenant.prefix);
     setSessionCookie(res, sessionId);
 
     res.writeHead(302, { Location: rd });
@@ -238,12 +290,17 @@ function escapeHtml(s) {
 
 // ── Start ───────────────────────────────────────────
 async function main() {
-  const providerName = config.authProvider || 'password';
-  console.log(`[auth-gateway] loading provider: ${providerName}`);
-  provider = await loadProvider(providerName);
+  // 预加载默认 provider
+  const defaultProvider = config.authProvider || 'password';
+  await loadProvider(defaultProvider);
 
-  if (provider.init) {
-    await provider.init(config.provider);
+  // 预加载所有 tenant 的 provider
+  if (config.tenants) {
+    for (const [prefix, tc] of Object.entries(config.tenants)) {
+      const name = tc.authProvider || defaultProvider;
+      await loadProvider(name);
+      console.log(`[auth-gateway] tenant "${prefix}" → provider: ${name}`);
+    }
   }
 
   http.createServer(async (req, res) => {
@@ -271,7 +328,8 @@ async function main() {
       res.end('internal error');
     }
   }).listen(PORT, () => {
-    console.log(`[auth-gateway] listening on :${PORT}, provider=${providerName}`);
+    const tenantCount = config.tenants ? Object.keys(config.tenants).length : 0;
+    console.log(`[auth-gateway] listening on :${PORT}, default=${defaultProvider}, tenants=${tenantCount}`);
   });
 }
 

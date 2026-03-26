@@ -2,31 +2,35 @@
   "port": 4180,
   "cookieName": "_auth_gw",
   "cookieMaxAgeSec": 604800,
-  "secret": "替换成一个随机字符串-用于签名",
+  "secret": "替换成一个随机字符串",
 
-  "// 切换身份提供商: feishu | wechat | telegram | password": "",
+  "// 默认身份提供商（未匹配到任何 tenant 时使用）": "",
   "authProvider": "password",
-
-  "// ── 各 provider 的配置，只需填当前使用的那个 ──": "",
   "provider": {
-
-    "// ── password (兜底方案) ──": "",
     "password": "your-secret-password",
-    "username": "admin",
+    "username": "admin"
+  },
 
-    "// ── feishu ──": "",
-    "appId": "",
-    "appSecret": "",
-    "allowedDepartments": [],
-
-    "// ── wechat ──": "",
-    "// appId": "wx-app-id",
-    "// appSecret": "wx-app-secret",
-    "// allowedOpenIds": [],
-
-    "// ── telegram ──": "",
-    "// botToken": "123456:ABC-DEF",
-    "// botUsername": "your_bot",
-    "// allowedUserIds": []
+  "// 多租户配置（可选）：不同路径前缀使用不同的 IdP": "",
+  "// 访问 /tenant-a/* 时用租户 A 的飞书应用认证": "",
+  "// 访问 /tenant-b/* 时用租户 B 的微信认证": "",
+  "// 未匹配的路径 fallback 到上面的默认 password 认证": "",
+  "tenants": {
+    "/tenant-a": {
+      "authProvider": "feishu",
+      "provider": {
+        "appId": "飞书应用A的appId",
+        "appSecret": "飞书应用A的appSecret",
+        "allowedDepartments": []
+      }
+    },
+    "/tenant-b": {
+      "authProvider": "feishu",
+      "provider": {
+        "appId": "飞书应用B的appId",
+        "appSecret": "飞书应用B的appSecret",
+        "allowedDepartments": []
+      }
+    }
   }
 }
