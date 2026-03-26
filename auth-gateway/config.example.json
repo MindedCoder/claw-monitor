@@ -1,0 +1,32 @@
+{
+  "port": 4180,
+  "cookieName": "_auth_gw",
+  "cookieMaxAgeSec": 604800,
+  "secret": "替换成一个随机字符串-用于签名",
+
+  "// 切换身份提供商: feishu | wechat | telegram | password": "",
+  "authProvider": "password",
+
+  "// ── 各 provider 的配置，只需填当前使用的那个 ──": "",
+  "provider": {
+
+    "// ── password (兜底方案) ──": "",
+    "password": "your-secret-password",
+    "username": "admin",
+
+    "// ── feishu ──": "",
+    "appId": "",
+    "appSecret": "",
+    "allowedDepartments": [],
+
+    "// ── wechat ──": "",
+    "// appId": "wx-app-id",
+    "// appSecret": "wx-app-secret",
+    "// allowedOpenIds": [],
+
+    "// ── telegram ──": "",
+    "// botToken": "123456:ABC-DEF",
+    "// botUsername": "your_bot",
+    "// allowedUserIds": []
+  }
+}
