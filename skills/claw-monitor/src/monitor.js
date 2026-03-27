@@ -157,7 +157,28 @@ async function checkHealth(url) {
 // ══════════════════════════════════════════
 //  3. Feishu Chat Stats
 // ══════════════════════════════════════════
-function parseFeishuLogs(config) {
+// open_id → display name cache (persists across ticks)
+const feishuUserNameCache = new Map();
+
+async function resolveFeishuUserName(openId, config) {
+  if (feishuUserNameCache.has(openId)) return feishuUserNameCache.get(openId);
+  try {
+    const { appId, appSecret } = config.feishu;
+    if (!appId || !appSecret) return openId.slice(0, 12);
+    const token = await getFeishuToken(appId, appSecret);
+    const res = await fetch(`https://open.feishu.cn/open-apis/contact/v3/users/${openId}?user_id_type=open_id`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    const name = data?.data?.user?.name || openId.slice(0, 12);
+    feishuUserNameCache.set(openId, name);
+    return name;
+  } catch {
+    return openId.slice(0, 12);
+  }
+}
+
+async function parseFeishuLogs(config) {
   // 优先从 feishu-notify hook 日志读取（有更多元数据）
   const hookLog = path.join(config.workspace, 'data', 'status-page-notify-debug.log');
   if (fs.existsSync(hookLog)) {
@@ -179,7 +200,7 @@ function parseFeishuLogs(config) {
     } catch {}
   }
 
-  // fallback: 从 gateway.log 解析飞书消息
+  // fallback: 从 gateway.log 解析飞书消息，通过 API 反查用户名
   try {
     const stat = fs.statSync(OPENCLAW_GATEWAY_LOG);
     const readSize = Math.min(stat.size, 131072); // 读最后 128KB
@@ -194,17 +215,20 @@ function parseFeishuLogs(config) {
       // "received message from ou_xxxx in ... (p2p)" or "DM from ou_xxxx: ..."
       const recv = line.match(/^(\S+)\s+.*received message from (\S+) in .+\((\w+)\)/);
       if (recv) {
-        const uid = recv[2].slice(0, 12);
-        users.add(uid);
-        messages.push({ time: recv[1], name: uid, senderId: recv[2] });
+        messages.push({ time: recv[1], senderId: recv[2] });
         continue;
       }
       const dm = line.match(/^(\S+)\s+.*DM from (\S+):/);
       if (dm) {
-        const uid = dm[2].slice(0, 12);
-        users.add(uid);
-        messages.push({ time: dm[1], name: uid, senderId: dm[2] });
+        messages.push({ time: dm[1], senderId: dm[2] });
       }
+    }
+    // 批量解析用户名（去重后并发查询）
+    const uniqueIds = [...new Set(messages.map(m => m.senderId))];
+    await Promise.all(uniqueIds.map(id => resolveFeishuUserName(id, config)));
+    for (const m of messages) {
+      m.name = feishuUserNameCache.get(m.senderId) || m.senderId.slice(0, 12);
+      users.add(m.name);
     }
     state.feishuChat.totalMessages = messages.length;
     state.feishuChat.recentMessages = messages.slice(-20);
@@ -562,7 +586,7 @@ async function tick(config) {
     } else if (state.health.status !== 'down') { state.health.status = 'degraded'; }
   }
 
-  parseFeishuLogs(config);
+  await parseFeishuLogs(config);
   parseOpenClawConfig();
   parseModelUsage();
   detectAIActivity();
