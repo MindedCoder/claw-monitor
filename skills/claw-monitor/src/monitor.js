@@ -343,7 +343,7 @@ async function chatProbe(config) {
 
   const gatewayUrl = probe.url || `http://127.0.0.1:${config.gatewayPort || 18789}/v1/chat/completions`;
   const token = probe.token || '';
-  const model = probe.model || 'gpt-4o-mini';
+  const model = probe.model || 'openclaw:probe';
   const testMessage = probe.testMessage || 'hi';
   const timeoutMs = probe.timeoutMs || 30000;
 
