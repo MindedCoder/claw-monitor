@@ -367,7 +367,7 @@ async function chatProbe(config) {
         stream: false,
         thinking: { type: 'disabled' },
         user: 'claw-monitor-probe',
-        conversation_id: probe.sessionId || 'claw-monitor-probe'
+        conversation_id: `claw-monitor-probe-${Math.floor(Date.now() / 3600000)}`
       }),
       signal: controller.signal
     });
