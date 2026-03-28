@@ -183,11 +183,8 @@ PY
 # ── 5. 停止旧服务 ──
 MONITOR_DIR="$HOME/Documents/openclaw-monitor"
 FRPC_BIN="$HOME/bin/frpc"
-PLIST_LABEL="com.claw.monitor"
-PLIST_PATH="$HOME/Library/LaunchAgents/${PLIST_LABEL}.plist"
 
-OS_TYPE=$(uname -s)
-if [ "$OS_TYPE" = "Darwin" ]; then
+if [ "$(uname -s)" = "Darwin" ]; then
   # 清理所有 claw/openclaw 相关的 launchd plist（含历史残留）
   for p in "$HOME/Library/LaunchAgents/"*claw*monitor*.plist "$HOME/Library/LaunchAgents/"*openclaw*.plist; do
     [ -f "$p" ] && launchctl unload "$p" 2>/dev/null || true && rm -f "$p"
@@ -198,50 +195,10 @@ pkill -f "frpc.*frpc.toml" 2>/dev/null || true
 pkill -f "claw-monitor-start" 2>/dev/null || true
 sleep 1
 
-# ── 6. 启动服务 ──
-if [ "$OS_TYPE" = "Darwin" ]; then
-  # macOS: 用 launchd 保活（进程挂了自动重启 + 登录自动启动）
-  mkdir -p "$HOME/Library/LaunchAgents"
-  cat > "$PLIST_PATH" << PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>${PLIST_LABEL}</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>${NODE_BIN}</string>
-        <string>${MONITOR_DIR}/monitor.js</string>
-    </array>
-    <key>WorkingDirectory</key>
-    <string>${MONITOR_DIR}</string>
-    <key>KeepAlive</key>
-    <true/>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>${MONITOR_DIR}/monitor.log</string>
-    <key>StandardErrorPath</key>
-    <string>${MONITOR_DIR}/monitor.err.log</string>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>HOME</key>
-        <string>${HOME}</string>
-        <key>PATH</key>
-        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:${HOME}/bin</string>
-    </dict>
-</dict>
-</plist>
-PLIST
-  launchctl load -w "$PLIST_PATH"
-  echo "DONE: launchd service registered (KeepAlive + RunAtLoad)"
-else
-  # Linux: nohup 启动
-  cd "$MONITOR_DIR"
-  nohup "$NODE_BIN" monitor.js > monitor.log 2> monitor.err.log &
-  echo "DONE: monitor started via nohup (pid $!)"
-fi
+# ── 6. 启动服务（nohup + while 循环保活）──
+cd "$MONITOR_DIR"
+nohup bash -c "while true; do \"$NODE_BIN\" monitor.js; echo \"\$(date) monitor exited, restarting in 3s...\" >> monitor.keepalive.log; sleep 3; done" > monitor.log 2> monitor.err.log &
+echo "DONE: monitor started with auto-restart keepalive (pid $!)"
 sleep 3
 
 # ── 7. 验证服务 ──
