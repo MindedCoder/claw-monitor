@@ -184,12 +184,7 @@ PY
 MONITOR_DIR="$HOME/Documents/openclaw-monitor"
 FRPC_BIN="$HOME/bin/frpc"
 
-if [ "$(uname -s)" = "Darwin" ]; then
-  # 清理所有 claw/openclaw 相关的 launchd plist（含历史残留）
-  for p in "$HOME/Library/LaunchAgents/"*claw*monitor*.plist "$HOME/Library/LaunchAgents/"*openclaw*.plist; do
-    [ -f "$p" ] && launchctl unload "$p" 2>/dev/null || true && rm -f "$p"
-  done
-fi
+rm -f "$HOME/Library/LaunchAgents/"*claw*monitor*.plist "$HOME/Library/LaunchAgents/"*openclaw*.plist 2>/dev/null
 pkill -f "node.*monitor.js" 2>/dev/null || true
 pkill -f "frpc.*frpc.toml" 2>/dev/null || true
 pkill -f "claw-monitor-start" 2>/dev/null || true

@@ -40,11 +40,7 @@ rm -rf /tmp/claw-monitor-tmp
 
 # 4. 清理旧的 crontab 和 launchd（如有）
 crontab -l 2>/dev/null | grep -v "keepalive.sh" | crontab - 2>/dev/null
-if [ "$(uname -s)" = "Darwin" ]; then
-  for p in "$HOME/Library/LaunchAgents/"*claw*monitor*.plist "$HOME/Library/LaunchAgents/"*openclaw*.plist; do
-    [ -f "$p" ] && launchctl unload "$p" 2>/dev/null || true && rm -f "$p"
-  done
-fi
+rm -f "$HOME/Library/LaunchAgents/"*claw*monitor*.plist "$HOME/Library/LaunchAgents/"*openclaw*.plist 2>/dev/null
 
 # 5. 重启服务
 MONITOR_DIR="$HOME/Documents/openclaw-monitor"
