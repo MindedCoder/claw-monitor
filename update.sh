@@ -38,21 +38,69 @@ done
 
 rm -rf /tmp/claw-monitor-tmp
 
-# 4. 清理旧的 crontab 和 launchd（如有）
+# 4. 清理旧的 crontab（如有）
 crontab -l 2>/dev/null | grep -v "keepalive.sh" | crontab - 2>/dev/null
-if [ "$(uname -s)" = "Darwin" ]; then
-  launchctl bootout gui/$(id -u) "$HOME/Library/LaunchAgents/com.openclaw.monitor.plist" 2>/dev/null || true
-  launchctl bootout gui/$(id -u) "$HOME/Library/LaunchAgents/com.openclaw.frpc.plist" 2>/dev/null || true
+
+# 5. 重启服务
+MONITOR_DIR="$HOME/Documents/openclaw-monitor"
+PLIST_LABEL="com.claw.monitor"
+PLIST_PATH="$HOME/Library/LaunchAgents/${PLIST_LABEL}.plist"
+NODE_BIN=$(command -v node)
+OS_TYPE=$(uname -s)
+
+# 停止旧进程
+if [ "$OS_TYPE" = "Darwin" ]; then
+  launchctl bootout "gui/$(id -u)" "$PLIST_PATH" 2>/dev/null || true
+  # 清理旧版分体 plist
+  launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.openclaw.monitor.plist" 2>/dev/null || true
+  launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.openclaw.frpc.plist" 2>/dev/null || true
   rm -f "$HOME/Library/LaunchAgents/com.openclaw.monitor.plist" "$HOME/Library/LaunchAgents/com.openclaw.frpc.plist"
 fi
-
-# 5. 重启服务（monitor.js 内置 frpc 管理，无需单独启动 frpc）
 pkill -f "node.*monitor.js" 2>/dev/null || true
 pkill -f "frpc.*frpc.toml" 2>/dev/null || true
 sleep 1
-cd ~/Documents/openclaw-monitor
-NODE_BIN=$(command -v node)
-nohup "$NODE_BIN" monitor.js > monitor.log 2> monitor.err.log &
-echo "  ✅ monitor 已重启（frpc 由 monitor 内置管理）"
+
+# 启动服务
+if [ "$OS_TYPE" = "Darwin" ]; then
+  mkdir -p "$HOME/Library/LaunchAgents"
+  cat > "$PLIST_PATH" << PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>${PLIST_LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${NODE_BIN}</string>
+        <string>${MONITOR_DIR}/monitor.js</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>${MONITOR_DIR}</string>
+    <key>KeepAlive</key>
+    <true/>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>${MONITOR_DIR}/monitor.log</string>
+    <key>StandardErrorPath</key>
+    <string>${MONITOR_DIR}/monitor.err.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>${HOME}</string>
+        <key>PATH</key>
+        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:${HOME}/bin</string>
+    </dict>
+</dict>
+</plist>
+PLIST
+  launchctl bootstrap "gui/$(id -u)" "$PLIST_PATH"
+  echo "  ✅ monitor 已通过 launchd 启动（KeepAlive 保活）"
+else
+  cd "$MONITOR_DIR"
+  nohup "$NODE_BIN" monitor.js > monitor.log 2> monitor.err.log &
+  echo "  ✅ monitor 已重启（nohup）"
+fi
 
 echo "🎉 更新完成"
