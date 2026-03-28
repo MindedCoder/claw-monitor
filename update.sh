@@ -50,10 +50,10 @@ OS_TYPE=$(uname -s)
 
 # 停止旧进程
 if [ "$OS_TYPE" = "Darwin" ]; then
-  launchctl bootout "gui/$(id -u)" "$PLIST_PATH" 2>/dev/null || true
+  launchctl unload "$PLIST_PATH" 2>/dev/null || true
   # 清理旧版分体 plist
-  launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.openclaw.monitor.plist" 2>/dev/null || true
-  launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.openclaw.frpc.plist" 2>/dev/null || true
+  launchctl unload "$HOME/Library/LaunchAgents/com.openclaw.monitor.plist" 2>/dev/null || true
+  launchctl unload "$HOME/Library/LaunchAgents/com.openclaw.frpc.plist" 2>/dev/null || true
   rm -f "$HOME/Library/LaunchAgents/com.openclaw.monitor.plist" "$HOME/Library/LaunchAgents/com.openclaw.frpc.plist"
 fi
 pkill -f "node.*monitor.js" 2>/dev/null || true
@@ -95,7 +95,7 @@ if [ "$OS_TYPE" = "Darwin" ]; then
 </dict>
 </plist>
 PLIST
-  launchctl bootstrap "gui/$(id -u)" "$PLIST_PATH"
+  launchctl load -w "$PLIST_PATH"
   echo "  ✅ monitor 已通过 launchd 启动（KeepAlive 保活）"
 else
   cd "$MONITOR_DIR"
