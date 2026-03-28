@@ -45,19 +45,29 @@ crontab -l 2>/dev/null | grep -v "keepalive.sh" | crontab - 2>/dev/null
 MONITOR_DIR="$HOME/Documents/openclaw-monitor"
 PLIST_LABEL="com.claw.monitor"
 PLIST_PATH="$HOME/Library/LaunchAgents/${PLIST_LABEL}.plist"
-NODE_BIN=$(command -v node)
+NODE_BIN=""
+if command -v node &>/dev/null; then
+  NODE_BIN=$(command -v node)
+elif [ -d "$HOME/.nvm/versions/node" ]; then
+  NODE_BIN=$(find "$HOME/.nvm/versions/node" -maxdepth 3 -name node -type f 2>/dev/null | sort -V | tail -1)
+elif [ -d "$HOME/.local/share/fnm" ]; then
+  NODE_BIN=$(find "$HOME/.local/share/fnm" -maxdepth 4 -name node -type f 2>/dev/null | sort -V | tail -1)
+fi
+if [ -z "$NODE_BIN" ]; then
+  echo "ERROR: node not found"; exit 1
+fi
 OS_TYPE=$(uname -s)
 
 # 停止旧进程
 if [ "$OS_TYPE" = "Darwin" ]; then
-  launchctl unload "$PLIST_PATH" 2>/dev/null || true
-  # 清理旧版分体 plist
-  launchctl unload "$HOME/Library/LaunchAgents/com.openclaw.monitor.plist" 2>/dev/null || true
-  launchctl unload "$HOME/Library/LaunchAgents/com.openclaw.frpc.plist" 2>/dev/null || true
-  rm -f "$HOME/Library/LaunchAgents/com.openclaw.monitor.plist" "$HOME/Library/LaunchAgents/com.openclaw.frpc.plist"
+  # 清理所有 claw/openclaw 相关的 launchd plist（含历史残留）
+  for p in "$HOME/Library/LaunchAgents/"*claw*monitor*.plist "$HOME/Library/LaunchAgents/"*openclaw*.plist; do
+    [ -f "$p" ] && launchctl unload "$p" 2>/dev/null || true && rm -f "$p"
+  done
 fi
 pkill -f "node.*monitor.js" 2>/dev/null || true
 pkill -f "frpc.*frpc.toml" 2>/dev/null || true
+pkill -f "claw-monitor-start" 2>/dev/null || true
 sleep 1
 
 # 启动服务
