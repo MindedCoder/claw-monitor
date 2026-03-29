@@ -391,7 +391,7 @@ async function chatProbe(config) {
         stream: false,
         thinking: { type: 'disabled' },
         user: 'claw-monitor-probe',
-        conversation_id: `claw-monitor-probe-${Math.floor(Date.now() / 3600000)}`
+        conversation_id: `claw-monitor-probe-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
       }),
       signal: controller.signal
     });
@@ -406,7 +406,8 @@ async function chatProbe(config) {
     } else {
       const data = await res.json();
       entry.ok = true;
-      entry.reply = data.choices?.[0]?.message?.content?.slice(0, 50) || '(empty)';
+      const rawReply = data.choices?.[0]?.message?.content || '';
+      entry.reply = /^[\w\s!.,?🐾🤖👋😊💡]+$/u.test(rawReply.slice(0, 50)) ? rawReply.slice(0, 50) : '(filtered)';
       log(`[CHAT-PROBE] response keys: ${Object.keys(data).join(',')} usage=${JSON.stringify(data.usage || null)}`);
       // 读取 API 返回的真实 usage
       if (data.usage) {
