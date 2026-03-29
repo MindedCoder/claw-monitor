@@ -66,7 +66,7 @@ const LOG_TRANSLATIONS = [
   [/WebSocket client started/, 'WebSocket 连接已建立'],
   [/ws client ready/, 'WebSocket 连接就绪'],
   [/received message from (\S+) in .+\((\w+)\)/, (_, uid, type) => `收到${type === 'p2p' ? '私聊' : '群聊'}消息 (${uid.slice(0, 8)}...)`],
-  [/DM from (\S+): (.+)/, (_, uid, msg) => `用户私信: "${msg.slice(0, 30)}"`],
+  [/DM from (\S+): (.+)/, (_, uid) => `收到用户私信 (${uid.slice(0, 8)}...)`],
   [/dispatching to agent \(session=(.+)\)/, '正在分配 AI 处理任务'],
   [/dispatch complete.+replies=(\d+)/, (_, n) => `AI 处理完成，回复了 ${n} 条消息`],
   [/pairing request sender=(.+)/, '新用户配对请求'],
@@ -104,11 +104,8 @@ function translateLog(raw) {
       return typeof replacement === 'function' ? replacement(...match) : replacement;
     }
   }
-  // fallback: clean up common patterns
-  return raw
-    .replace(/^\[[\w/-]+\]\s*/, '')
-    .replace(/^\[[\w/-]+\]\s*/, '')
-    .slice(0, 120);
+  // 不匹配任何翻译规则的日志不显示，避免 AI 回复等原始内容泄漏
+  return '';
 }
 
 // ══════════════════════════════════════════
