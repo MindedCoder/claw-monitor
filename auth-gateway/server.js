@@ -153,6 +153,13 @@ function getRedirectUri(req) {
 
 /** nginx auth_request → 200 (已登录) 或 401 (未登录) */
 function handleCheck(req, res) {
+  // API / static / healthz paths bypass auth
+  const originalUri = req.headers['x-original-uri'] || '';
+  if (originalUri.includes('/api/') || originalUri.includes('/static/') || originalUri.endsWith('/healthz')) {
+    res.writeHead(200);
+    return res.end('ok');
+  }
+
   const cookies = parseCookies(req.headers.cookie);
   const session = getSession(cookies[COOKIE_NAME]);
   if (session) {
